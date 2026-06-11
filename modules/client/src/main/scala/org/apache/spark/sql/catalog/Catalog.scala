@@ -43,8 +43,7 @@ class Catalog private[sql] (sparkSession: SparkSession) {
 
   /** Sets the current default catalog. */
   def setCurrentCatalog(catalogName: String): Unit =
-    run(proto.Catalog.CatType.SetCurrentCatalog(
-      proto.SetCurrentCatalog(catalogName = catalogName)))
+    run(proto.Catalog.CatType.SetCurrentCatalog(proto.SetCurrentCatalog(catalogName = catalogName)))
 
   /** Returns a [[DataFrame]] of all catalogs. */
   def listCatalogs(): DataFrame =
@@ -58,8 +57,7 @@ class Catalog private[sql] (sparkSession: SparkSession) {
 
   /** Sets the current default database. */
   def setCurrentDatabase(dbName: String): Unit =
-    run(proto.Catalog.CatType.SetCurrentDatabase(
-      proto.SetCurrentDatabase(dbName = dbName)))
+    run(proto.Catalog.CatType.SetCurrentDatabase(proto.SetCurrentDatabase(dbName = dbName)))
 
   /** Returns a [[DataFrame]] of all databases. */
   def listDatabases(): DataFrame =
@@ -67,8 +65,7 @@ class Catalog private[sql] (sparkSession: SparkSession) {
 
   /** Returns whether a database with the given name exists. */
   def databaseExists(dbName: String): Boolean =
-    scalarBoolean(proto.Catalog.CatType.DatabaseExists(
-      proto.DatabaseExists(dbName = dbName)))
+    scalarBoolean(proto.Catalog.CatType.DatabaseExists(proto.DatabaseExists(dbName = dbName)))
 
   // -- Tables ----------------------------------------------------------------
 
@@ -78,30 +75,33 @@ class Catalog private[sql] (sparkSession: SparkSession) {
 
   /** Returns a [[DataFrame]] of tables (and views) in the given database. */
   def listTables(dbName: String): DataFrame =
-    catalogDataFrame(proto.Catalog.CatType.ListTables(
-      proto.ListTables(dbName = Some(dbName))))
+    catalogDataFrame(proto.Catalog.CatType.ListTables(proto.ListTables(dbName = Some(dbName))))
 
   /** Returns whether a table or view with the given name exists. */
   def tableExists(tableName: String): Boolean =
-    scalarBoolean(proto.Catalog.CatType.TableExists(
-      proto.TableExists(tableName = tableName)))
+    scalarBoolean(proto.Catalog.CatType.TableExists(proto.TableExists(tableName = tableName)))
 
   /** Returns whether a table or view with the given name in the given database exists. */
   def tableExists(dbName: String, tableName: String): Boolean =
-    scalarBoolean(proto.Catalog.CatType.TableExists(
-      proto.TableExists(tableName = tableName, dbName = Some(dbName))))
+    scalarBoolean(
+      proto.Catalog.CatType.TableExists(
+        proto.TableExists(tableName = tableName, dbName = Some(dbName))
+      )
+    )
 
   // -- Columns ---------------------------------------------------------------
 
   /** Returns a [[DataFrame]] of the columns of the given table. */
   def listColumns(tableName: String): DataFrame =
-    catalogDataFrame(proto.Catalog.CatType.ListColumns(
-      proto.ListColumns(tableName = tableName)))
+    catalogDataFrame(proto.Catalog.CatType.ListColumns(proto.ListColumns(tableName = tableName)))
 
   /** Returns a [[DataFrame]] of the columns of the given table in the given database. */
   def listColumns(dbName: String, tableName: String): DataFrame =
-    catalogDataFrame(proto.Catalog.CatType.ListColumns(
-      proto.ListColumns(tableName = tableName, dbName = Some(dbName))))
+    catalogDataFrame(
+      proto.Catalog.CatType.ListColumns(
+        proto.ListColumns(tableName = tableName, dbName = Some(dbName))
+      )
+    )
 
   // -- Functions -------------------------------------------------------------
 
@@ -111,27 +111,27 @@ class Catalog private[sql] (sparkSession: SparkSession) {
 
   /** Returns whether a function with the given name exists. */
   def functionExists(functionName: String): Boolean =
-    scalarBoolean(proto.Catalog.CatType.FunctionExists(
-      proto.FunctionExists(functionName = functionName)))
+    scalarBoolean(
+      proto.Catalog.CatType.FunctionExists(proto.FunctionExists(functionName = functionName))
+    )
 
   // -- Views -----------------------------------------------------------------
 
   /** Drops a session-local temporary view. Returns whether the view was dropped. */
   def dropTempView(viewName: String): Boolean =
-    scalarBoolean(proto.Catalog.CatType.DropTempView(
-      proto.DropTempView(viewName = viewName)))
+    scalarBoolean(proto.Catalog.CatType.DropTempView(proto.DropTempView(viewName = viewName)))
 
   /** Drops a global temporary view. Returns whether the view was dropped. */
   def dropGlobalTempView(viewName: String): Boolean =
-    scalarBoolean(proto.Catalog.CatType.DropGlobalTempView(
-      proto.DropGlobalTempView(viewName = viewName)))
+    scalarBoolean(
+      proto.Catalog.CatType.DropGlobalTempView(proto.DropGlobalTempView(viewName = viewName))
+    )
 
   // -- Cache -----------------------------------------------------------------
 
   /** Returns whether the given table is cached. */
   def isCached(tableName: String): Boolean =
-    scalarBoolean(proto.Catalog.CatType.IsCached(
-      proto.IsCached(tableName = tableName)))
+    scalarBoolean(proto.Catalog.CatType.IsCached(proto.IsCached(tableName = tableName)))
 
   /** Caches the given table in memory. */
   def cacheTable(tableName: String): Unit =
@@ -157,18 +157,16 @@ class Catalog private[sql] (sparkSession: SparkSession) {
 
   /** Recovers all partitions of the given table. */
   def recoverPartitions(tableName: String): Unit =
-    run(proto.Catalog.CatType.RecoverPartitions(
-      proto.RecoverPartitions(tableName = tableName)))
+    run(proto.Catalog.CatType.RecoverPartitions(proto.RecoverPartitions(tableName = tableName)))
 
   // -- Internals -------------------------------------------------------------
 
   private def catalogDataFrame(catType: proto.Catalog.CatType): DataFrame =
-    sparkSession.newDataFrame(
-      proto.Relation.RelType.Catalog(proto.Catalog(catType = catType)))
+    sparkSession.newDataFrame(proto.Relation.RelType.Catalog(proto.Catalog(catType = catType)))
 
   private def rows(catType: proto.Catalog.CatType): Array[Row] = {
-    val relation = sparkSession.newRelation(
-      proto.Relation.RelType.Catalog(proto.Catalog(catType = catType)))
+    val relation =
+      sparkSession.newRelation(proto.Relation.RelType.Catalog(proto.Catalog(catType = catType)))
     sparkSession.execute(proto.Plan(proto.Plan.OpType.Root(relation))).toArray
   }
 

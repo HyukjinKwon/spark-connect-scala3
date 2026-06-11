@@ -21,11 +21,13 @@ object JoinExample {
       val orders = spark.sql(
         "SELECT * FROM VALUES " +
           "(1, 'KR', 120.0), (2, 'US', 80.0), (3, 'KR', 50.0), (4, 'JP', 30.0) " +
-          "AS t(id, country, amount)")
+          "AS t(id, country, amount)"
+      )
 
       val regions = spark.sql(
         "SELECT * FROM VALUES ('KR', 'Asia'), ('US', 'Americas'), ('JP', 'Asia') " +
-          "AS t(country, region)")
+          "AS t(country, region)"
+      )
 
       // Inner join on the shared `country` column, then total by region.
       orders
@@ -42,8 +44,6 @@ object JoinExample {
         .select(orders.col("id"), orders.col("country"), col("region"))
         .orderBy("id")
         .show()
-    } finally {
-      spark.stop()
-    }
+    } finally spark.stop()
   }
 }

@@ -57,7 +57,8 @@ class DataStreamWriter private[sql] (ds: Dataset) {
   /**
    * Specifies the output mode (`"append"`, `"complete"`, or `"update"`).
    *
-   * @return this writer, for chaining.
+   * @return
+   *   this writer, for chaining.
    */
   def outputMode(outputMode: String): DataStreamWriter = {
     this.mode = Option(outputMode)
@@ -67,7 +68,8 @@ class DataStreamWriter private[sql] (ds: Dataset) {
   /**
    * Specifies the sink format (e.g. `"console"`, `"memory"`, `"kafka"`).
    *
-   * @return this writer, for chaining.
+   * @return
+   *   this writer, for chaining.
    */
   def format(source: String): DataStreamWriter = {
     this.source = Option(source)
@@ -77,7 +79,8 @@ class DataStreamWriter private[sql] (ds: Dataset) {
   /**
    * Adds an output option for the underlying sink.
    *
-   * @return this writer, for chaining.
+   * @return
+   *   this writer, for chaining.
    */
   def option(key: String, value: String): DataStreamWriter = {
     extraOptions += (key -> value)
@@ -96,7 +99,8 @@ class DataStreamWriter private[sql] (ds: Dataset) {
   /**
    * Adds multiple output options.
    *
-   * @return this writer, for chaining.
+   * @return
+   *   this writer, for chaining.
    */
   def options(options: Map[String, String]): DataStreamWriter = {
     extraOptions ++= options
@@ -107,7 +111,8 @@ class DataStreamWriter private[sql] (ds: Dataset) {
    * Specifies the name of the [[StreamingQuery]] that can be used with
    * [[StreamingQueryManager#get]] to look it up. The name is required by the memory sink.
    *
-   * @return this writer, for chaining.
+   * @return
+   *   this writer, for chaining.
    */
   def queryName(queryName: String): DataStreamWriter = {
     this.name = Option(queryName)
@@ -117,7 +122,8 @@ class DataStreamWriter private[sql] (ds: Dataset) {
   /**
    * Partitions the output by the given columns on the file system.
    *
-   * @return this writer, for chaining.
+   * @return
+   *   this writer, for chaining.
    */
   def partitionBy(colNames: String*): DataStreamWriter = {
     this.partitioning = colNames
@@ -125,10 +131,11 @@ class DataStreamWriter private[sql] (ds: Dataset) {
   }
 
   /**
-   * Sets the trigger for the streaming query. Exactly one trigger is in effect; calling this
-   * method again replaces any previously set trigger.
+   * Sets the trigger for the streaming query. Exactly one trigger is in effect; calling this method
+   * again replaces any previously set trigger.
    *
-   * @return this writer, for chaining.
+   * @return
+   *   this writer, for chaining.
    */
   def trigger(trigger: Trigger): DataStreamWriter = {
     this.trigger = trigger.toProto
@@ -139,7 +146,8 @@ class DataStreamWriter private[sql] (ds: Dataset) {
    * Starts the execution of the streaming query, writing the result to the given path. This is
    * shorthand for setting the `path` option and calling [[start()]].
    *
-   * @return the [[StreamingQuery]] handle for the started query.
+   * @return
+   *   the [[StreamingQuery]] handle for the started query.
    */
   def start(path: String): StreamingQuery =
     run(proto.WriteStreamOperationStart.SinkDestination.Path(path))
@@ -148,7 +156,8 @@ class DataStreamWriter private[sql] (ds: Dataset) {
    * Starts the execution of the streaming query, which will continually output results to the
    * configured sink as new data arrives.
    *
-   * @return the [[StreamingQuery]] handle for the started query.
+   * @return
+   *   the [[StreamingQuery]] handle for the started query.
    */
   def start(): StreamingQuery =
     run(proto.WriteStreamOperationStart.SinkDestination.Empty)
@@ -156,13 +165,15 @@ class DataStreamWriter private[sql] (ds: Dataset) {
   /**
    * Starts the execution of the streaming query, writing the result into the given table.
    *
-   * @return the [[StreamingQuery]] handle for the started query.
+   * @return
+   *   the [[StreamingQuery]] handle for the started query.
    */
   def toTable(tableName: String): StreamingQuery =
     run(proto.WriteStreamOperationStart.SinkDestination.TableName(tableName))
 
   private def run(
-      sinkDestination: proto.WriteStreamOperationStart.SinkDestination): StreamingQuery = {
+      sinkDestination: proto.WriteStreamOperationStart.SinkDestination
+  ): StreamingQuery = {
     val op = proto.WriteStreamOperationStart(
       input = Some(ds.relation),
       format = source.getOrElse(""),
@@ -171,7 +182,8 @@ class DataStreamWriter private[sql] (ds: Dataset) {
       trigger = trigger,
       outputMode = mode.getOrElse(""),
       queryName = name.getOrElse(""),
-      sinkDestination = sinkDestination)
+      sinkDestination = sinkDestination
+    )
     val commandProto =
       proto.Command(commandType = proto.Command.CommandType.WriteStreamOperationStart(op))
     val plan = proto.Plan(proto.Plan.OpType.Command(commandProto))
@@ -184,14 +196,15 @@ class DataStreamWriter private[sql] (ds: Dataset) {
       }
     }
     val wsr = result.getOrElse(
-      throw new IllegalStateException(
-        "Server did not return a streaming query handle"))
+      throw new IllegalStateException("Server did not return a streaming query handle")
+    )
     val instanceId = wsr.getQueryId
     new StreamingQuery(
       ds.sparkSession,
       instanceId.id,
       instanceId.runId,
-      if (wsr.name.isEmpty) null else wsr.name)
+      if (wsr.name.isEmpty) null else wsr.name
+    )
   }
 }
 
@@ -227,8 +240,8 @@ object Trigger {
   }
 
   /**
-   * A trigger that processes all available data in (possibly) multiple micro-batches and then
-   * stops the query.
+   * A trigger that processes all available data in (possibly) multiple micro-batches and then stops
+   * the query.
    */
   def AvailableNow(): Trigger = new Trigger {
     private[sql] def toProto: proto.WriteStreamOperationStart.Trigger =
@@ -236,8 +249,8 @@ object Trigger {
   }
 
   /**
-   * A trigger that runs a continuous query, checkpointing at the given interval (e.g.
-   * `"1 second"`).
+   * A trigger that runs a continuous query, checkpointing at the given interval (e.g. `"1
+   * second"`).
    */
   def Continuous(interval: String): Trigger = new Trigger {
     private[sql] def toProto: proto.WriteStreamOperationStart.Trigger =

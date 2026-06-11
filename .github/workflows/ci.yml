@@ -50,9 +50,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Spark 4.0+ ships a Scala 2.13 build that bundles the Connect server,
-        # so the default tarball works and no --packages is needed.
-        spark: ["4.0.2", "4.1.2"]
+        include:
+          # Spark 3.5.x does not bundle the Connect server: use the Scala 2.13
+          # distribution and pull the server in with --packages.
+          - spark: "3.5.6"
+            tarball: "spark-3.5.6-bin-hadoop3-scala2.13.tgz"
+            packages: "--packages org.apache.spark:spark-connect_2.13:3.5.6"
+          # Spark 4.0+ bundles the Connect server; the default tarball works.
+          - spark: "4.0.2"
+            tarball: "spark-4.0.2-bin-hadoop3.tgz"
+            packages: ""
+          - spark: "4.1.2"
+            tarball: "spark-4.1.2-bin-hadoop3.tgz"
+            packages: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -84,15 +94,14 @@ jobs:
         if: steps.spark-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/spark
-          curl -L "https://archive.apache.org/dist/spark/spark-${{ matrix.spark }}/spark-${{ matrix.spark }}-bin-hadoop3.tgz" \
+          curl -L "https://archive.apache.org/dist/spark/spark-${{ matrix.spark }}/${{ matrix.tarball }}" \
             | tar xz -C ~/spark --strip-components=1
 
       - name: Start Spark Connect server
         run: |
-          # Spark 4.0+ bundles the Connect server, so no --packages is needed.
-          # Leave SPARK_NO_DAEMONIZE unset so the server daemonizes and the
-          # wait loop below can run.
-          ~/spark/sbin/start-connect-server.sh --conf spark.log.level=WARN
+          # On Spark 4.0+ the Connect server is bundled (matrix.packages is empty).
+          # On Spark 3.5.x it is pulled in via --packages (matrix.packages).
+          ~/spark/sbin/start-connect-server.sh ${{ matrix.packages }} --conf spark.log.level=WARN
           # Wait for the gRPC port to accept connections.
           for i in $(seq 1 60); do
             if bash -c "</dev/tcp/localhost/15002" 2>/dev/null; then
@@ -105,6 +114,7 @@ jobs:
       - name: Run integration tests
         env:
           SPARK_CONNECT_TEST_REMOTE: "sc://localhost:15002"
+          SPARK_CONNECT_TEST_VERSION: ${{ matrix.spark }}
         run: sbt "client/testOnly *Integration*"
 
       - name: Dump server log on failure

@@ -69,7 +69,9 @@ class DataTypeConverterSuite extends munit.FunSuite {
       Array(
         StructField("id", LongType, nullable = false),
         StructField("name", StringType, nullable = true),
-        StructField("tags", ArrayType(StringType, containsNull = true), nullable = true)))
+        StructField("tags", ArrayType(StringType, containsNull = true), nullable = true)
+      )
+    )
     assertRoundtrip(schema)
   }
 

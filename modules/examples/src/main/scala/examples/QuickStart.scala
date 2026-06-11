@@ -36,8 +36,6 @@ object QuickStart {
       // +---+------+
 
       println(s"row count = ${df.count()}")
-    } finally {
-      spark.stop()
-    }
+    } finally spark.stop()
   }
 }

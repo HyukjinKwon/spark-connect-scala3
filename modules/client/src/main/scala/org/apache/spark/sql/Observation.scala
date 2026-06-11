@@ -87,9 +87,8 @@ import org.apache.spark.connect.proto
 // =============================================================================
 
 /**
- * Holder for named aggregate metrics computed while a [[Dataset]] is being
- * materialised, without an extra pass over the data. Pair with
- * `Dataset.observe`.
+ * Holder for named aggregate metrics computed while a [[Dataset]] is being materialised, without an
+ * extra pass over the data. Pair with `Dataset.observe`.
  *
  * {{{
  *   val obs = new Observation("metrics")
@@ -97,18 +96,18 @@ import org.apache.spark.connect.proto
  *   obs.get  // Map("rows" -> 100, "max_id" -> 99)
  * }}}
  *
- * The result of `get` is a map from metric column name to its value. `get`
- * blocks until the metrics have been observed (i.e. until an action on the
- * observed Dataset has run and the result code has called
- * `setMetricsFromLiterals`).
+ * The result of `get` is a map from metric column name to its value. `get` blocks until the metrics
+ * have been observed (i.e. until an action on the observed Dataset has run and the result code has
+ * called `setMetricsFromLiterals`).
  *
- * @param name a unique name for this observation.
+ * @param name
+ *   a unique name for this observation.
  */
 class Observation(val name: String) {
 
   /**
-   * Creates an Observation with a random UUID name, mirroring the default in
-   * the Ruby reference client.
+   * Creates an Observation with a random UUID name, mirroring the default in the Ruby reference
+   * client.
    */
   def this() = this(UUID.randomUUID().toString)
 
@@ -120,11 +119,12 @@ class Observation(val name: String) {
   private val lock = new Object
 
   /**
-   * The observed metric values. Blocks until the metrics are available, i.e.
-   * until an action has been executed on the Dataset this Observation was
-   * attached to and the response stream has been consumed.
+   * The observed metric values. Blocks until the metrics are available, i.e. until an action has
+   * been executed on the Dataset this Observation was attached to and the response stream has been
+   * consumed.
    *
-   * @return a map from metric name to its observed value.
+   * @return
+   *   a map from metric name to its observed value.
    */
   def get: Map[String, Any] = {
     latch.await()
@@ -132,59 +132,54 @@ class Observation(val name: String) {
   }
 
   /**
-   * Builds the CollectMetrics message for the given Dataset and metric columns,
-   * and registers this Observation so the result code can route observed
-   * metric values back to it by name. Intended to be called from
-   * `Dataset.observe`.
+   * Builds the CollectMetrics message for the given Dataset and metric columns, and registers this
+   * Observation so the result code can route observed metric values back to it by name. Intended to
+   * be called from `Dataset.observe`.
    *
-   * An Observation can be attached to at most one Dataset; calling this twice
-   * throws.
+   * An Observation can be attached to at most one Dataset; calling this twice throws.
    *
-   * @param ds    the Dataset being observed.
-   * @param exprs the metric columns (at least one).
-   * @return the fully built `proto.CollectMetrics` relation message.
+   * @param ds
+   *   the Dataset being observed.
+   * @param exprs
+   *   the metric columns (at least one).
+   * @return
+   *   the fully built `proto.CollectMetrics` relation message.
    */
-  private[sql] def markObserved(
-      ds: Dataset,
-      exprs: Seq[Column]): proto.CollectMetrics = lock.synchronized {
-    if (Observation.lookup(name).isDefined) {
-      throw new IllegalArgumentException(
-        "An Observation can be used with a Dataset only once")
+  private[sql] def markObserved(ds: Dataset, exprs: Seq[Column]): proto.CollectMetrics =
+    lock.synchronized {
+      if (Observation.lookup(name).isDefined) {
+        throw new IllegalArgumentException("An Observation can be used with a Dataset only once")
+      }
+      Observation.register(name, this)
+      proto.CollectMetrics(input = Some(ds.relation), name = name, metrics = exprs.map(_.expr))
     }
-    Observation.register(name, this)
-    proto.CollectMetrics(
-      input = Some(ds.relation),
-      name = name,
-      metrics = exprs.map(_.expr))
-  }
 
   /**
-   * Sets the observed metric values from the response stream and unblocks any
-   * threads waiting in `get`. Intended to be called from the result-collection
-   * code (SparkResult) once `ExecutePlanResponse.observedMetrics` has been
-   * decoded.
+   * Sets the observed metric values from the response stream and unblocks any threads waiting in
+   * `get`. Intended to be called from the result-collection code (SparkResult) once
+   * `ExecutePlanResponse.observedMetrics` has been decoded.
    *
-   * Only the first set of metrics is recorded; subsequent calls are ignored,
-   * matching Apache Spark's behaviour for a single action.
+   * Only the first set of metrics is recorded; subsequent calls are ignored, matching Apache
+   * Spark's behaviour for a single action.
    *
-   * @param values the decoded metric values, in column order.
-   * @param keys   the metric column names, parallel to `values`.
+   * @param values
+   *   the decoded metric values, in column order.
+   * @param keys
+   *   the metric column names, parallel to `values`.
    */
-  private[sql] def setMetricsFromLiterals(
-      values: Seq[Any],
-      keys: Seq[String]): Unit = lock.synchronized {
-    if (metrics.isEmpty) {
-      metrics = Some(keys.zip(values).toMap)
-      latch.countDown()
+  private[sql] def setMetricsFromLiterals(values: Seq[Any], keys: Seq[String]): Unit =
+    lock.synchronized {
+      if (metrics.isEmpty) {
+        metrics = Some(keys.zip(values).toMap)
+        latch.countDown()
+      }
     }
-  }
 }
 
 /**
- * Companion for [[Observation]]. Maintains a registry mapping observation names
- * to instances so the result-collection code can route observed metric values
- * back to the originating Observation, and provides a helper for decoding
- * `proto.Expression.Literal` values.
+ * Companion for [[Observation]]. Maintains a registry mapping observation names to instances so the
+ * result-collection code can route observed metric values back to the originating Observation, and
+ * provides a helper for decoding `proto.Expression.Literal` values.
  */
 object Observation {
 
@@ -200,32 +195,30 @@ object Observation {
     Option(registry.get(name))
 
   /**
-   * Decodes a `proto.Expression.Literal` into a Scala value. Covers the literal
-   * kinds that aggregate metrics commonly produce. Unknown or null literals
-   * decode to `null`.
+   * Decodes a `proto.Expression.Literal` into a Scala value. Covers the literal kinds that
+   * aggregate metrics commonly produce. Unknown or null literals decode to `null`.
    *
-   * If the integrator already has a richer literal decoder, that should be used
-   * instead and the decoded `Seq[Any]` passed directly to
-   * `setMetricsFromLiterals`.
+   * If the integrator already has a richer literal decoder, that should be used instead and the
+   * decoded `Seq[Any]` passed directly to `setMetricsFromLiterals`.
    */
   private[sql] def decodeLiteral(literal: proto.Expression.Literal): Any = {
     import proto.Expression.Literal.LiteralType
     literal.literalType match {
-      case LiteralType.Null(_)       => null
-      case LiteralType.Boolean(v)    => v
-      case LiteralType.Byte(v)       => v.toByte
-      case LiteralType.Short(v)      => v.toShort
-      case LiteralType.Integer(v)    => v
-      case LiteralType.Long(v)       => v
-      case LiteralType.Float(v)      => v
-      case LiteralType.Double(v)     => v
-      case LiteralType.String(v)     => v
-      case LiteralType.Decimal(v)    => BigDecimal(v.value)
-      case LiteralType.Date(v)       => v
-      case LiteralType.Timestamp(v)  => v
+      case LiteralType.Null(_) => null
+      case LiteralType.Boolean(v) => v
+      case LiteralType.Byte(v) => v.toByte
+      case LiteralType.Short(v) => v.toShort
+      case LiteralType.Integer(v) => v
+      case LiteralType.Long(v) => v
+      case LiteralType.Float(v) => v
+      case LiteralType.Double(v) => v
+      case LiteralType.String(v) => v
+      case LiteralType.Decimal(v) => BigDecimal(v.value)
+      case LiteralType.Date(v) => v
+      case LiteralType.Timestamp(v) => v
       case LiteralType.TimestampNtz(v) => v
-      case LiteralType.Empty         => null
-      case other                     => other.value
+      case LiteralType.Empty => null
+      case other => other.value
     }
   }
 }

@@ -41,7 +41,8 @@ class StreamingQuery private[sql] (
     spark: SparkSession,
     val id: String,
     val runId: String,
-    val name: String) {
+    val name: String
+) {
 
   private val instanceId: proto.StreamingQueryInstanceId =
     proto.StreamingQueryInstanceId(id = id, runId = runId)
@@ -59,7 +60,8 @@ class StreamingQuery private[sql] (
       message = s.statusMessage,
       isDataAvailable = s.isDataAvailable,
       isTriggerActive = s.isTriggerActive,
-      isActive = s.isActive)
+      isActive = s.isActive
+    )
   }
 
   /**
@@ -82,36 +84,38 @@ class StreamingQuery private[sql] (
    * Waits for the termination of this query, blocking the current thread until the query stops or
    * fails.
    *
-   * @return whether the query has terminated.
+   * @return
+   *   whether the query has terminated.
    */
   def awaitTermination(): Boolean =
-    command(_.withAwaitTermination(proto.StreamingQueryCommand.AwaitTerminationCommand()))
-      .getAwaitTermination.terminated
+    command(
+      _.withAwaitTermination(proto.StreamingQueryCommand.AwaitTerminationCommand())
+    ).getAwaitTermination.terminated
 
   /**
    * Waits for the termination of this query, blocking the current thread until the query stops or
    * fails, or until `timeoutMs` milliseconds have elapsed.
    *
-   * @return whether the query has terminated within the timeout.
+   * @return
+   *   whether the query has terminated within the timeout.
    */
   def awaitTermination(timeoutMs: Long): Boolean =
     command(
       _.withAwaitTermination(
-        proto.StreamingQueryCommand.AwaitTerminationCommand(timeoutMs = Some(timeoutMs))))
-      .getAwaitTermination.terminated
+        proto.StreamingQueryCommand.AwaitTerminationCommand(timeoutMs = Some(timeoutMs))
+      )
+    ).getAwaitTermination.terminated
 
   /**
    * Blocks until all available data in the source has been processed and committed to the sink.
    * Intended for testing with bounded sources.
    */
-  def processAllAvailable(): Unit = {
+  def processAllAvailable(): Unit =
     command(_.withProcessAllAvailable(true))
-  }
 
   /** Stops the execution of this query if it is running. */
-  def stop(): Unit = {
+  def stop(): Unit =
     command(_.withStop(true))
-  }
 
   /** Prints the (logical and physical) plans of this query to the console for debugging. */
   def explain(): Unit = explain(extended = false)
@@ -125,8 +129,8 @@ class StreamingQuery private[sql] (
   def explain(extended: Boolean): Unit = {
     val result =
       command(
-        _.withExplain(proto.StreamingQueryCommand.ExplainCommand(extended = extended)))
-        .getExplain.result
+        _.withExplain(proto.StreamingQueryCommand.ExplainCommand(extended = extended))
+      ).getExplain.result
     // scalastyle:off println
     println(result)
     // scalastyle:on println
@@ -145,20 +149,21 @@ class StreamingQuery private[sql] (
         StreamingQueryException(
           message = result.exceptionMessage.getOrElse(""),
           errorClass = result.errorClass.getOrElse(""),
-          stackTrace = result.stackTrace.getOrElse("")))
+          stackTrace = result.stackTrace.getOrElse("")
+        )
+      )
     }
   }
 
   override def toString: String = s"StreamingQuery [id=$id, runId=$runId, name=$name]"
 
   /**
-   * Builds a [[proto.StreamingQueryCommand]] for this query by applying `f`, sends it as a
-   * command plan, drains the response stream and returns the typed
-   * [[proto.StreamingQueryCommandResult]].
+   * Builds a [[proto.StreamingQueryCommand]] for this query by applying `f`, sends it as a command
+   * plan, drains the response stream and returns the typed [[proto.StreamingQueryCommandResult]].
    */
   private def command(
-      f: proto.StreamingQueryCommand => proto.StreamingQueryCommand)
-      : proto.StreamingQueryCommandResult = {
+      f: proto.StreamingQueryCommand => proto.StreamingQueryCommand
+  ): proto.StreamingQueryCommandResult = {
     val cmd = f(proto.StreamingQueryCommand(queryId = Some(instanceId)))
     val commandProto =
       proto.Command(commandType = proto.Command.CommandType.StreamingQueryCommand(cmd))
@@ -172,8 +177,8 @@ class StreamingQuery private[sql] (
       }
     }
     result.getOrElse(
-      throw new IllegalStateException(
-        "Server did not return a StreamingQueryCommandResult"))
+      throw new IllegalStateException("Server did not return a StreamingQueryCommandResult")
+    )
   }
 }
 
@@ -193,7 +198,8 @@ case class StreamingQueryStatus(
     message: String,
     isDataAvailable: Boolean,
     isTriggerActive: Boolean,
-    isActive: Boolean)
+    isActive: Boolean
+)
 
 /**
  * Describes the exception that terminated a [[StreamingQuery]].
@@ -205,7 +211,4 @@ case class StreamingQueryStatus(
  * @param stackTrace
  *   the stack trace of the exception, if any.
  */
-case class StreamingQueryException(
-    message: String,
-    errorClass: String,
-    stackTrace: String)
+case class StreamingQueryException(message: String, errorClass: String, stackTrace: String)

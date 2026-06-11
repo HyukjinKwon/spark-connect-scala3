@@ -50,25 +50,27 @@ object DataTypeProtoConverter {
     case k: p.DataType.Kind.YearMonthInterval =>
       YearMonthIntervalType(
         k.value.startField.getOrElse(0).toByte,
-        k.value.endField.getOrElse(1).toByte)
+        k.value.endField.getOrElse(1).toByte
+      )
     case k: p.DataType.Kind.DayTimeInterval =>
       DayTimeIntervalType(
         k.value.startField.getOrElse(0).toByte,
-        k.value.endField.getOrElse(3).toByte)
+        k.value.endField.getOrElse(3).toByte
+      )
     case k: p.DataType.Kind.Array =>
-      ArrayType(
-        toCatalystType(k.value.getElementType),
-        k.value.containsNull)
+      ArrayType(toCatalystType(k.value.getElementType), k.value.containsNull)
     case k: p.DataType.Kind.Map =>
       MapType(
         toCatalystType(k.value.getKeyType),
         toCatalystType(k.value.getValueType),
-        k.value.valueContainsNull)
+        k.value.valueContainsNull
+      )
     case k: p.DataType.Kind.Struct =>
       StructType(k.value.fields.map(toStructField).toArray)
     case k: p.DataType.Kind.Unparsed =>
       throw new IllegalArgumentException(
-        s"Cannot convert unparsed data type: ${k.value.dataTypeString}")
+        s"Cannot convert unparsed data type: ${k.value.dataTypeString}"
+      )
     case other =>
       throw new IllegalArgumentException(s"Unsupported data type: $other")
   }
@@ -78,7 +80,8 @@ object DataTypeProtoConverter {
       name = f.name,
       dataType = toCatalystType(f.getDataType),
       nullable = f.nullable,
-      metadata = Metadata.empty)
+      metadata = Metadata.empty
+    )
 
   /** Converts a client-side [[DataType]] into the protobuf representation. */
   def toConnectProtoType(t: DataType): p.DataType = {
@@ -103,31 +106,31 @@ object DataTypeProtoConverter {
       case VarcharType(length) => p.DataType.Kind.VarChar(p.DataType.VarChar(length = length))
       case DecimalType(precision, scale) =>
         p.DataType.Kind.Decimal(
-          p.DataType.Decimal(precision = Some(precision), scale = Some(scale)))
+          p.DataType.Decimal(precision = Some(precision), scale = Some(scale))
+        )
       case YearMonthIntervalType(start, end) =>
         p.DataType.Kind.YearMonthInterval(
-          p.DataType.YearMonthInterval(
-            startField = Some(start.toInt),
-            endField = Some(end.toInt)))
+          p.DataType.YearMonthInterval(startField = Some(start.toInt), endField = Some(end.toInt))
+        )
       case DayTimeIntervalType(start, end) =>
         p.DataType.Kind.DayTimeInterval(
-          p.DataType.DayTimeInterval(
-            startField = Some(start.toInt),
-            endField = Some(end.toInt)))
+          p.DataType.DayTimeInterval(startField = Some(start.toInt), endField = Some(end.toInt))
+        )
       case ArrayType(elementType, containsNull) =>
         p.DataType.Kind.Array(
-          p.DataType.Array(
-            elementType = Some(toConnectProtoType(elementType)),
-            containsNull = containsNull))
+          p.DataType
+            .Array(elementType = Some(toConnectProtoType(elementType)), containsNull = containsNull)
+        )
       case MapType(keyType, valueType, valueContainsNull) =>
         p.DataType.Kind.Map(
           p.DataType.Map(
             keyType = Some(toConnectProtoType(keyType)),
             valueType = Some(toConnectProtoType(valueType)),
-            valueContainsNull = valueContainsNull))
+            valueContainsNull = valueContainsNull
+          )
+        )
       case s: StructType =>
-        p.DataType.Kind.Struct(
-          p.DataType.Struct(fields = s.fields.toSeq.map(toProtoStructField)))
+        p.DataType.Kind.Struct(p.DataType.Struct(fields = s.fields.toSeq.map(toProtoStructField)))
       case other =>
         throw new IllegalArgumentException(s"Unsupported data type: ${other.simpleString}")
     }
@@ -139,5 +142,6 @@ object DataTypeProtoConverter {
       name = f.name,
       dataType = Some(toConnectProtoType(f.dataType)),
       nullable = f.nullable,
-      metadata = if (f.metadata.isEmpty) None else Some(f.metadata.json))
+      metadata = if (f.metadata.isEmpty) None else Some(f.metadata.json)
+    )
 }

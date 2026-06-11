@@ -39,14 +39,12 @@ class DataFrameNaFunctions private[sql] (df: Dataset) {
    * Returns a new [[Dataset]] that drops rows containing null values.
    *
    * @param how
-   *   `"any"` drops a row if it contains any null, `"all"` drops a row only if every value is
-   *   null.
+   *   `"any"` drops a row if it contains any null, `"all"` drops a row only if every value is null.
    */
   def drop(how: String): DataFrame = drop(how, Seq.empty)
 
   /**
-   * Returns a new [[Dataset]] that drops rows containing fewer than `minNonNulls` non-null
-   * values.
+   * Returns a new [[Dataset]] that drops rows containing fewer than `minNonNulls` non-null values.
    */
   def drop(minNonNulls: Int): DataFrame = buildDrop(Seq.empty, Some(minNonNulls))
 
@@ -73,7 +71,9 @@ class DataFrameNaFunctions private[sql] (df: Dataset) {
   private def buildDrop(cols: Seq[String], minNonNulls: Option[Int]): DataFrame =
     df.sparkSession.newDataFrame(
       proto.Relation.RelType.DropNa(
-        proto.NADrop(input = Some(df.relation), cols = cols, minNonNulls = minNonNulls)))
+        proto.NADrop(input = Some(df.relation), cols = cols, minNonNulls = minNonNulls)
+      )
+    )
 
   /** Returns a new [[Dataset]] that replaces null values in all columns with `value`. */
   def fill(value: Long): DataFrame = buildFill(Seq.empty, Seq(value))
@@ -111,10 +111,9 @@ class DataFrameNaFunctions private[sql] (df: Dataset) {
   private def buildFill(cols: Seq[String], values: Seq[Any]): DataFrame =
     df.sparkSession.newDataFrame(
       proto.Relation.RelType.FillNa(
-        proto.NAFill(
-          input = Some(df.relation),
-          cols = cols,
-          values = values.map(naLiteral))))
+        proto.NAFill(input = Some(df.relation), cols = cols, values = values.map(naLiteral))
+      )
+    )
 
   /**
    * Returns a new [[Dataset]] that replaces values matching keys of `replacement` in `col`.
@@ -142,17 +141,19 @@ class DataFrameNaFunctions private[sql] (df: Dataset) {
     val replacements = replacement.toSeq.map { case (oldValue, newValue) =>
       proto.NAReplace.Replacement(
         oldValue = Some(naLiteral(oldValue)),
-        newValue = Some(naLiteral(newValue)))
+        newValue = Some(naLiteral(newValue))
+      )
     }
     df.sparkSession.newDataFrame(
       proto.Relation.RelType.Replace(
-        proto.NAReplace(input = Some(df.relation), cols = cols, replacements = replacements)))
+        proto.NAReplace(input = Some(df.relation), cols = cols, replacements = replacements)
+      )
+    )
   }
 
   /**
-   * Builds a literal for fill/replace. Spark's handlers only accept `Long`, `Double`, `String`
-   * or `Boolean` literals (not 32-bit `Int`), so `Int` is widened to `Long` and `Float` to
-   * `Double`.
+   * Builds a literal for fill/replace. Spark's handlers only accept `Long`, `Double`, `String` or
+   * `Boolean` literals (not 32-bit `Int`), so `Int` is widened to `Long` and `Float` to `Double`.
    */
   private def naLiteral(value: Any): proto.Expression.Literal = value match {
     case i: Int => Column.lit(i.toLong).expr.getLiteral

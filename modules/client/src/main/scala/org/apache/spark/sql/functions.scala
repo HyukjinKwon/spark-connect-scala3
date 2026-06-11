@@ -26,13 +26,13 @@ package org.apache.spark.sql
  *   df.groupBy("dept").agg(avg("salary"), count(lit(1)))
  * }}}
  *
- * This object exposes a comprehensive subset of Spark's function library. Any Spark function
- * not listed here can still be invoked by name via [[callUDF]] / [[expr]].
+ * This object exposes a comprehensive subset of Spark's function library. Any Spark function not
+ * listed here can still be invoked by name via [[callUDF]] / [[expr]].
  *
  * Following Spark's convention, a `String` argument denotes a *column name* for most functions
  * (e.g. `sum("salary")` aggregates the `salary` column), while functions whose parameters are
- * genuinely literal (regex patterns, date formats, JSON paths, ...) treat their `String`
- * arguments as literal values.
+ * genuinely literal (regex patterns, date formats, JSON paths, ...) treat their `String` arguments
+ * as literal values.
  */
 object functions {
 
@@ -449,7 +449,8 @@ object functions {
       timeColumn: Column,
       windowDuration: String,
       slideDuration: String,
-      startTime: String): Column =
+      startTime: String
+  ): Column =
     Column.fn("window", timeColumn, lit(windowDuration), lit(slideDuration), lit(startTime))
   def session_window(timeColumn: Column, gapDuration: String): Column =
     Column.fn("session_window", timeColumn, lit(gapDuration))
@@ -461,7 +462,8 @@ object functions {
       days: Column,
       hours: Column,
       mins: Column,
-      secs: Column): Column =
+      secs: Column
+  ): Column =
     Column.fn("make_timestamp", years, months, days, hours, mins, secs)
   def extract(field: Column, source: Column): Column = Column.fn("extract", field, source)
   def date_part(field: Column, source: Column): Column = Column.fn("date_part", field, source)

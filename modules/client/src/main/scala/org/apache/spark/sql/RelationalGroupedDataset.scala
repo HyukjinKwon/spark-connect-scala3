@@ -29,7 +29,8 @@ class RelationalGroupedDataset private[sql] (
     groupingExprs: Seq[Column],
     groupType: proto.Aggregate.GroupType,
     pivotCol: Option[Column] = None,
-    pivotValues: Option[Seq[Any]] = None) {
+    pivotValues: Option[Seq[Any]] = None
+) {
 
   private def build(aggExprs: Seq[Column]): DataFrame = {
     val pivot =
@@ -37,14 +38,17 @@ class RelationalGroupedDataset private[sql] (
         Some(
           proto.Aggregate.Pivot(
             col = pivotCol.map(_.expr),
-            values = pivotValues.getOrElse(Nil).map(v => Column.lit(v).expr.getLiteral)))
+            values = pivotValues.getOrElse(Nil).map(v => Column.lit(v).expr.getLiteral)
+          )
+        )
       } else None
     val agg = proto.Aggregate(
       input = Some(df.relation),
       groupType = groupType,
       groupingExpressions = groupingExprs.map(_.expr),
       aggregateExpressions = aggExprs.map(_.expr),
-      pivot = pivot)
+      pivot = pivot
+    )
     df.sparkSession.newDataFrame(RelType.Aggregate(agg))
   }
 
@@ -73,14 +77,16 @@ class RelationalGroupedDataset private[sql] (
       groupingExprs,
       proto.Aggregate.GroupType.GROUP_TYPE_PIVOT,
       Some(pivotColumn),
-      None)
+      None
+    )
   def pivot(pivotColumn: String, values: Seq[Any]): RelationalGroupedDataset =
     new RelationalGroupedDataset(
       df,
       groupingExprs,
       proto.Aggregate.GroupType.GROUP_TYPE_PIVOT,
       Some(Column.fromName(pivotColumn)),
-      Some(values))
+      Some(values)
+    )
 
   private def numericAgg(fn: String, colNames: Seq[String]): DataFrame =
     build(colNames.map(c => Column.fn(fn, Column.fromName(c))))

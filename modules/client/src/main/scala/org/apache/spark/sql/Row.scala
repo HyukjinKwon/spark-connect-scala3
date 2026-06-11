@@ -122,6 +122,7 @@ trait Row extends Serializable {
 }
 
 object Row {
+
   /** Creates a Row from the given values (no schema). */
   def apply(values: Any*): Row = new GenericRow(values.toArray)
 

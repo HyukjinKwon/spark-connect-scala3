@@ -46,7 +46,8 @@ class DataFrameStatFunctions private[sql] (df: Dataset) {
   def approxQuantile(
       col: String,
       probabilities: Array[Double],
-      relativeError: Double): Array[Double] =
+      relativeError: Double
+  ): Array[Double] =
     approxQuantile(Array(col), probabilities, relativeError).head
 
   /**
@@ -64,14 +65,18 @@ class DataFrameStatFunctions private[sql] (df: Dataset) {
   def approxQuantile(
       cols: Array[String],
       probabilities: Array[Double],
-      relativeError: Double): Array[Array[Double]] = {
+      relativeError: Double
+  ): Array[Array[Double]] = {
     val df0 = df.sparkSession.newDataFrame(
       proto.Relation.RelType.ApproxQuantile(
         proto.StatApproxQuantile(
           input = Some(df.relation),
           cols = cols.toSeq,
           probabilities = probabilities.toSeq,
-          relativeError = relativeError)))
+          relativeError = relativeError
+        )
+      )
+    )
     val row = df0.sparkSession.execute(df0.plan).toArray.head
     Array.tabulate(cols.length)(i => row.getSeq[Double](i).toArray)
   }
@@ -84,8 +89,8 @@ class DataFrameStatFunctions private[sql] (df: Dataset) {
    */
   def cov(col1: String, col2: String): Double = {
     val df0 = df.sparkSession.newDataFrame(
-      proto.Relation.RelType.Cov(
-        proto.StatCov(input = Some(df.relation), col1 = col1, col2 = col2)))
+      proto.Relation.RelType.Cov(proto.StatCov(input = Some(df.relation), col1 = col1, col2 = col2))
+    )
     df0.sparkSession.execute(df0.plan).toArray.head.getDouble(0)
   }
 
@@ -108,11 +113,9 @@ class DataFrameStatFunctions private[sql] (df: Dataset) {
   def corr(col1: String, col2: String, method: String): Double = {
     val df0 = df.sparkSession.newDataFrame(
       proto.Relation.RelType.Corr(
-        proto.StatCorr(
-          input = Some(df.relation),
-          col1 = col1,
-          col2 = col2,
-          method = Some(method))))
+        proto.StatCorr(input = Some(df.relation), col1 = col1, col2 = col2, method = Some(method))
+      )
+    )
     df0.sparkSession.execute(df0.plan).toArray.head.getDouble(0)
   }
 
@@ -125,7 +128,9 @@ class DataFrameStatFunctions private[sql] (df: Dataset) {
   def crosstab(col1: String, col2: String): DataFrame =
     df.sparkSession.newDataFrame(
       proto.Relation.RelType.Crosstab(
-        proto.StatCrosstab(input = Some(df.relation), col1 = col1, col2 = col2)))
+        proto.StatCrosstab(input = Some(df.relation), col1 = col1, col2 = col2)
+      )
+    )
 
   /**
    * Finds frequent items for the given columns, with the default support `0.01`.
@@ -146,7 +151,9 @@ class DataFrameStatFunctions private[sql] (df: Dataset) {
   def freqItems(cols: Seq[String], support: Double): DataFrame =
     df.sparkSession.newDataFrame(
       proto.Relation.RelType.FreqItems(
-        proto.StatFreqItems(input = Some(df.relation), cols = cols, support = Some(support))))
+        proto.StatFreqItems(input = Some(df.relation), cols = cols, support = Some(support))
+      )
+    )
 
   /**
    * Returns a stratified sample without replacement, keyed by the values in `col`.
@@ -164,7 +171,8 @@ class DataFrameStatFunctions private[sql] (df: Dataset) {
     val protoFractions = fractions.toSeq.map { case (stratum, fraction) =>
       proto.StatSampleBy.Fraction(
         stratum = Some(Column.lit(stratum).expr.getLiteral),
-        fraction = fraction)
+        fraction = fraction
+      )
     }
     df.sparkSession.newDataFrame(
       proto.Relation.RelType.SampleBy(
@@ -172,6 +180,9 @@ class DataFrameStatFunctions private[sql] (df: Dataset) {
           input = Some(df.relation),
           col = Some(Column.fromName(col).expr),
           fractions = protoFractions,
-          seed = Some(seed))))
+          seed = Some(seed)
+        )
+      )
+    )
   }
 }

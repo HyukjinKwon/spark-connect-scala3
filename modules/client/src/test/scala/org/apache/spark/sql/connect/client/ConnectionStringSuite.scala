@@ -20,8 +20,8 @@ package org.apache.spark.sql.connect.client
 import org.apache.spark.sql.connect.client.SparkConnectClient.Configuration
 
 /**
- * Unit tests for [[SparkConnectClient.parseConnectionString]]. These run entirely offline (no
- * gRPC channel, no server) and assert on the resulting [[Configuration]] case class.
+ * Unit tests for [[SparkConnectClient.parseConnectionString]]. These run entirely offline (no gRPC
+ * channel, no server) and assert on the resulting [[Configuration]] case class.
  */
 class ConnectionStringSuite extends munit.FunSuite {
 

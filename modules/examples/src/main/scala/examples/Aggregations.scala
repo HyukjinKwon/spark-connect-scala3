@@ -22,7 +22,8 @@ object Aggregations {
         "SELECT * FROM VALUES " +
           "('KR', 'book', 12.0), ('KR', 'pen', 3.5), ('KR', 'book', 9.0), " +
           "('US', 'book', 15.0), ('US', 'pen', 2.0), ('US', 'pen', 2.5) " +
-          "AS t(country, item, amount)")
+          "AS t(country, item, amount)"
+      )
 
       // One row per country with a handful of aggregates.
       sales
@@ -31,7 +32,8 @@ object Aggregations {
           count("*").as("orders"),
           round(sum("amount"), 2).as("total"),
           round(avg("amount"), 2).as("avg"),
-          max("amount").as("max"))
+          max("amount").as("max")
+        )
         .orderBy("country")
         .show()
 
@@ -40,11 +42,10 @@ object Aggregations {
         .groupBy("country")
         .agg(
           round(sum(when(col("item") === "book", col("amount")).otherwise(0.0)), 2)
-            .as("book_total"))
+            .as("book_total")
+        )
         .orderBy("country")
         .show()
-    } finally {
-      spark.stop()
-    }
+    } finally spark.stop()
   }
 }

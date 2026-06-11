@@ -20,7 +20,7 @@ package org.apache.spark.sql
 import scala.jdk.CollectionConverters._
 
 import org.apache.spark.connect.proto
-import org.apache.spark.connect.proto.Relation.{RelType}
+import org.apache.spark.connect.proto.Relation.RelType
 import org.apache.spark.sql.connect.common.DataTypeProtoConverter
 import org.apache.spark.sql.types.StructType
 
@@ -33,7 +33,8 @@ import org.apache.spark.sql.types.StructType
  */
 class Dataset private[sql] (
     val sparkSession: SparkSession,
-    private[sql] val relation: proto.Relation) {
+    private[sql] val relation: proto.Relation
+) {
 
   private[sql] def plan: proto.Plan = proto.Plan(proto.Plan.OpType.Root(relation))
 
@@ -60,19 +61,25 @@ class Dataset private[sql] (
   // -- Column references -----------------------------------------------------
 
   /**
-   * Selects a column by name, qualified by this Dataset's plan id so that it resolves
-   * unambiguously even in self-joins.
+   * Selects a column by name, qualified by this Dataset's plan id so that it resolves unambiguously
+   * even in self-joins.
    */
   def col(colName: String): Column = {
     val planId = relation.common.flatMap(_.planId)
     if (colName == "*") {
       Column(
-        proto.Expression(exprType = proto.Expression.ExprType.UnresolvedStar(
-          proto.Expression.UnresolvedStar(planId = planId))))
+        proto.Expression(exprType =
+          proto.Expression.ExprType.UnresolvedStar(proto.Expression.UnresolvedStar(planId = planId))
+        )
+      )
     } else {
       Column(
-        proto.Expression(exprType = proto.Expression.ExprType.UnresolvedAttribute(
-          proto.Expression.UnresolvedAttribute(unparsedIdentifier = colName, planId = planId))))
+        proto.Expression(exprType =
+          proto.Expression.ExprType.UnresolvedAttribute(
+            proto.Expression.UnresolvedAttribute(unparsedIdentifier = colName, planId = planId)
+          )
+        )
+      )
     }
   }
 
@@ -83,14 +90,20 @@ class Dataset private[sql] (
   def colRegex(colName: String): Column = {
     val planId = relation.common.flatMap(_.planId)
     Column(
-      proto.Expression(exprType = proto.Expression.ExprType.UnresolvedRegex(
-        proto.Expression.UnresolvedRegex(colName = colName, planId = planId))))
+      proto.Expression(exprType =
+        proto.Expression.ExprType.UnresolvedRegex(
+          proto.Expression.UnresolvedRegex(colName = colName, planId = planId)
+        )
+      )
+    )
   }
 
   // -- Projection / filtering ------------------------------------------------
 
   def select(cols: Column*): DataFrame =
-    withInput(RelType.Project(proto.Project(input = Some(relation), expressions = cols.map(_.expr))))
+    withInput(
+      RelType.Project(proto.Project(input = Some(relation), expressions = cols.map(_.expr)))
+    )
 
   def select(col: String, cols: String*): DataFrame =
     select((col +: cols).map(Column.fromName)*)
@@ -100,7 +113,8 @@ class Dataset private[sql] (
 
   def filter(condition: Column): DataFrame =
     withInput(
-      RelType.Filter(proto.Filter(input = Some(relation), condition = Some(condition.expr))))
+      RelType.Filter(proto.Filter(input = Some(relation), condition = Some(condition.expr)))
+    )
 
   def filter(conditionExpr: String): DataFrame = filter(Dataset.exprColumn(conditionExpr))
   def where(condition: Column): DataFrame = filter(condition)
@@ -111,18 +125,21 @@ class Dataset private[sql] (
       RelType.WithColumns(
         proto.WithColumns(
           input = Some(relation),
-          aliases =
-            Seq(proto.Expression.Alias(expr = Some(col.expr), name = Seq(colName))))))
+          aliases = Seq(proto.Expression.Alias(expr = Some(col.expr), name = Seq(colName)))
+        )
+      )
+    )
 
   def withColumnRenamed(existingName: String, newName: String): DataFrame =
     withInput(
       RelType.WithColumnsRenamed(
         proto.WithColumnsRenamed(
           input = Some(relation),
-          renames = Seq(
-            proto.WithColumnsRenamed.Rename(
-              colName = existingName,
-              newColName = newName)))))
+          renames =
+            Seq(proto.WithColumnsRenamed.Rename(colName = existingName, newColName = newName))
+        )
+      )
+    )
 
   def withColumnsRenamed(renames: Map[String, String]): DataFrame =
     withInput(
@@ -131,7 +148,10 @@ class Dataset private[sql] (
           input = Some(relation),
           renames = renames.toSeq.map { case (k, v) =>
             proto.WithColumnsRenamed.Rename(colName = k, newColName = v)
-          })))
+          }
+        )
+      )
+    )
 
   def drop(colNames: String*): DataFrame =
     withInput(RelType.Drop(proto.Drop(input = Some(relation), columnNames = colNames)))
@@ -144,8 +164,7 @@ class Dataset private[sql] (
     withInput(RelType.ToDf(proto.ToDF(input = Some(relation), columnNames = colNames)))
 
   def as(alias: String): DataFrame =
-    withInput(
-      RelType.SubqueryAlias(proto.SubqueryAlias(input = Some(relation), alias = alias)))
+    withInput(RelType.SubqueryAlias(proto.SubqueryAlias(input = Some(relation), alias = alias)))
   def alias(alias: String): DataFrame = as(alias)
 
   def hint(name: String, parameters: Any*): DataFrame =
@@ -154,7 +173,10 @@ class Dataset private[sql] (
         proto.Hint(
           input = Some(relation),
           name = name,
-          parameters = parameters.map(p => Column.lit(p).expr))))
+          parameters = parameters.map(p => Column.lit(p).expr)
+        )
+      )
+    )
 
   // -- Ordering & limiting ---------------------------------------------------
 
@@ -180,19 +202,23 @@ class Dataset private[sql] (
         proto.Sort(
           input = Some(relation),
           order = sortExprs.map(Dataset.toSortOrder),
-          isGlobal = Some(global))))
+          isGlobal = Some(global)
+        )
+      )
+    )
 
   // -- Distinct --------------------------------------------------------------
 
   def distinct(): DataFrame =
     withInput(
-      RelType.Deduplicate(
-        proto.Deduplicate(input = Some(relation), allColumnsAsKeys = Some(true))))
+      RelType.Deduplicate(proto.Deduplicate(input = Some(relation), allColumnsAsKeys = Some(true)))
+    )
 
   def dropDuplicates(): DataFrame = distinct()
   def dropDuplicates(colNames: Seq[String]): DataFrame =
     withInput(
-      RelType.Deduplicate(proto.Deduplicate(input = Some(relation), columnNames = colNames)))
+      RelType.Deduplicate(proto.Deduplicate(input = Some(relation), columnNames = colNames))
+    )
   def dropDuplicates(col1: String, cols: String*): DataFrame = dropDuplicates(col1 +: cols)
 
   // -- Set operations --------------------------------------------------------
@@ -209,7 +235,10 @@ class Dataset private[sql] (
           setOpType = proto.SetOperation.SetOpType.SET_OP_TYPE_UNION,
           isAll = Some(true),
           byName = Some(true),
-          allowMissingColumns = Some(allowMissingColumns))))
+          allowMissingColumns = Some(allowMissingColumns)
+        )
+      )
+    )
 
   def intersect(other: Dataset): DataFrame =
     setOpTyped(other, proto.SetOperation.SetOpType.SET_OP_TYPE_INTERSECT, isAll = false)
@@ -226,14 +255,18 @@ class Dataset private[sql] (
   private def setOpTyped(
       other: Dataset,
       opType: proto.SetOperation.SetOpType,
-      isAll: Boolean): DataFrame =
+      isAll: Boolean
+  ): DataFrame =
     withInput(
       RelType.SetOp(
         proto.SetOperation(
           leftInput = Some(relation),
           rightInput = Some(other.relation),
           setOpType = opType,
-          isAll = Some(isAll))))
+          isAll = Some(isAll)
+        )
+      )
+    )
 
   // -- Joins -----------------------------------------------------------------
 
@@ -254,7 +287,8 @@ class Dataset private[sql] (
       right: Dataset,
       joinExprs: Option[Column],
       usingColumns: Seq[String],
-      joinType: String): DataFrame =
+      joinType: String
+  ): DataFrame =
     withInput(
       RelType.Join(
         proto.Join(
@@ -262,14 +296,23 @@ class Dataset private[sql] (
           right = Some(right.relation),
           joinCondition = joinExprs.map(_.expr),
           joinType = Dataset.toJoinType(joinType),
-          usingColumns = usingColumns)))
+          usingColumns = usingColumns
+        )
+      )
+    )
 
   // -- Repartitioning --------------------------------------------------------
 
   def repartition(numPartitions: Int): DataFrame =
     withInput(
       RelType.Repartition(
-        proto.Repartition(input = Some(relation), numPartitions = numPartitions, shuffle = Some(true))))
+        proto.Repartition(
+          input = Some(relation),
+          numPartitions = numPartitions,
+          shuffle = Some(true)
+        )
+      )
+    )
 
   def repartition(numPartitions: Int, partitionExprs: Column*): DataFrame =
     withInput(
@@ -277,14 +320,20 @@ class Dataset private[sql] (
         proto.RepartitionByExpression(
           input = Some(relation),
           partitionExprs = partitionExprs.map(_.expr),
-          numPartitions = Some(numPartitions))))
+          numPartitions = Some(numPartitions)
+        )
+      )
+    )
 
   def repartition(partitionExprs: Column*): DataFrame =
     withInput(
       RelType.RepartitionByExpression(
         proto.RepartitionByExpression(
           input = Some(relation),
-          partitionExprs = partitionExprs.map(_.expr))))
+          partitionExprs = partitionExprs.map(_.expr)
+        )
+      )
+    )
 
   def coalesce(numPartitions: Int): DataFrame =
     withInput(
@@ -292,7 +341,10 @@ class Dataset private[sql] (
         proto.Repartition(
           input = Some(relation),
           numPartitions = numPartitions,
-          shuffle = Some(false))))
+          shuffle = Some(false)
+        )
+      )
+    )
 
   // -- Sampling --------------------------------------------------------------
 
@@ -309,7 +361,10 @@ class Dataset private[sql] (
           lowerBound = 0.0d,
           upperBound = fraction,
           withReplacement = Some(withReplacement),
-          seed = Some(seed))))
+          seed = Some(seed)
+        )
+      )
+    )
 
   // -- Grouping & aggregation ------------------------------------------------
 
@@ -335,7 +390,8 @@ class Dataset private[sql] (
     val agg = proto.Aggregate(
       input = Some(relation),
       groupType = proto.Aggregate.GroupType.GROUP_TYPE_GROUPBY,
-      aggregateExpressions = Seq(Column.fn("count", Column.lit(1)).expr))
+      aggregateExpressions = Seq(Column.fn("count", Column.lit(1)).expr)
+    )
     val rel = sparkSession.newRelation(RelType.Aggregate(agg))
     val rows = sparkSession.execute(proto.Plan(proto.Plan.OpType.Root(rel))).toArray
     if (rows.isEmpty) 0L else rows.head.getLong(0)
@@ -361,7 +417,10 @@ class Dataset private[sql] (
           input = Some(relation),
           numRows = numRows,
           truncate = truncate,
-          vertical = vertical)))
+          vertical = vertical
+        )
+      )
+    )
     val rows = sparkSession.execute(proto.Plan(proto.Plan.OpType.Root(rel))).toArray
     if (rows.nonEmpty) print(rows.head.getString(0))
   }
@@ -400,7 +459,11 @@ class Dataset private[sql] (
             input = Some(relation),
             name = viewName,
             isGlobal = global,
-            replace = replace))))
+            replace = replace
+          )
+        )
+      )
+    )
 
   // -- Statistics / summary --------------------------------------------------
 
@@ -444,8 +507,12 @@ private[sql] object Dataset {
 
   def exprColumn(e: String): Column =
     new Column(
-      proto.Expression(exprType = proto.Expression.ExprType.ExpressionString(
-          proto.Expression.ExpressionString(expression = e))))
+      proto.Expression(exprType =
+        proto.Expression.ExprType.ExpressionString(
+          proto.Expression.ExpressionString(expression = e)
+        )
+      )
+    )
 
   def toSortOrder(col: Column): proto.Expression.SortOrder =
     col.expr.exprType match {
@@ -454,7 +521,8 @@ private[sql] object Dataset {
         proto.Expression.SortOrder(
           child = Some(col.expr),
           direction = proto.Expression.SortOrder.SortDirection.SORT_DIRECTION_ASCENDING,
-          nullOrdering = proto.Expression.SortOrder.NullOrdering.SORT_NULLS_FIRST)
+          nullOrdering = proto.Expression.SortOrder.NullOrdering.SORT_NULLS_FIRST
+        )
     }
 
   def toJoinType(joinType: String): proto.Join.JoinType =

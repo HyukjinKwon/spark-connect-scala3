@@ -28,8 +28,8 @@ import org.apache.spark.sql.types._
  * A column in a [[Dataset]]: a lazily-evaluated reference to a column or a computation over
  * columns. Columns are immutable; operators and methods return new [[Column]]s.
  *
- * Build columns with [[functions.col]], [[functions.lit]], by indexing a DataFrame
- * (`df("id")`), or by combining other columns with operators.
+ * Build columns with [[functions.col]], [[functions.lit]], by indexing a DataFrame (`df("id")`), or
+ * by combining other columns with operators.
  *
  * {{{
  *   import org.apache.spark.sql.functions._
@@ -101,39 +101,56 @@ class Column(private[sql] val expr: proto.Expression) {
   def apply(key: Any): Column = getItem(key)
   def getItem(key: Any): Column =
     new Column(
-      proto.Expression(exprType = proto.Expression.ExprType.UnresolvedExtractValue(
-          proto.Expression.UnresolvedExtractValue(
-            child = Some(expr),
-            extraction = Some(Column.lit(key).expr)))))
+      proto.Expression(exprType =
+        proto.Expression.ExprType.UnresolvedExtractValue(
+          proto.Expression
+            .UnresolvedExtractValue(child = Some(expr), extraction = Some(Column.lit(key).expr))
+        )
+      )
+    )
   def getField(fieldName: String): Column = getItem(fieldName)
 
   // -- Aliasing / naming -----------------------------------------------------
   def as(alias: String): Column = named(alias)
   def as(aliases: Seq[String]): Column =
     new Column(
-      proto.Expression(exprType = proto.Expression.ExprType.Alias(
-          proto.Expression.Alias(expr = Some(expr), name = aliases))))
+      proto.Expression(exprType =
+        proto.Expression.ExprType.Alias(proto.Expression.Alias(expr = Some(expr), name = aliases))
+      )
+    )
   def alias(alias: String): Column = named(alias)
   def name(alias: String): Column = named(alias)
   private def named(alias: String): Column =
     new Column(
-      proto.Expression(exprType = proto.Expression.ExprType.Alias(
-          proto.Expression.Alias(expr = Some(expr), name = Seq(alias)))))
+      proto.Expression(exprType =
+        proto.Expression.ExprType.Alias(
+          proto.Expression.Alias(expr = Some(expr), name = Seq(alias))
+        )
+      )
+    )
 
   // -- Casting ---------------------------------------------------------------
   def cast(to: DataType): Column =
     new Column(
-      proto.Expression(exprType = proto.Expression.ExprType.Cast(
+      proto.Expression(exprType =
+        proto.Expression.ExprType.Cast(
           proto.Expression.Cast(
             expr = Some(expr),
-            castToType = proto.Expression.Cast.CastToType.Type(
-              DataTypeProtoConverter.toConnectProtoType(to))))))
+            castToType =
+              proto.Expression.Cast.CastToType.Type(DataTypeProtoConverter.toConnectProtoType(to))
+          )
+        )
+      )
+    )
   def cast(to: String): Column =
     new Column(
-      proto.Expression(exprType = proto.Expression.ExprType.Cast(
-          proto.Expression.Cast(
-            expr = Some(expr),
-            castToType = proto.Expression.Cast.CastToType.TypeStr(to)))))
+      proto.Expression(exprType =
+        proto.Expression.ExprType.Cast(
+          proto.Expression
+            .Cast(expr = Some(expr), castToType = proto.Expression.Cast.CastToType.TypeStr(to))
+        )
+      )
+    )
 
   // -- Sort ordering ---------------------------------------------------------
   def asc: Column =
@@ -149,15 +166,17 @@ class Column(private[sql] val expr: proto.Expression) {
   def desc_nulls_last: Column =
     sortOrder(ProtoSortOrder.SortDirection.SORT_DIRECTION_DESCENDING, nullsFirst = false)
 
-  private def sortOrder(
-      direction: ProtoSortOrder.SortDirection,
-      nullsFirst: Boolean): Column = {
+  private def sortOrder(direction: ProtoSortOrder.SortDirection, nullsFirst: Boolean): Column = {
     val nullOrdering =
       if (nullsFirst) ProtoSortOrder.NullOrdering.SORT_NULLS_FIRST
       else ProtoSortOrder.NullOrdering.SORT_NULLS_LAST
     new Column(
-      proto.Expression(exprType = proto.Expression.ExprType.SortOrder(
-          ProtoSortOrder(child = Some(expr), direction = direction, nullOrdering = nullOrdering))))
+      proto.Expression(exprType =
+        proto.Expression.ExprType.SortOrder(
+          ProtoSortOrder(child = Some(expr), direction = direction, nullOrdering = nullOrdering)
+        )
+      )
+    )
   }
 
   // -- CASE WHEN -------------------------------------------------------------
@@ -167,8 +186,12 @@ class Column(private[sql] val expr: proto.Expression) {
     val args = expr.getUnresolvedFunction.arguments ++
       Seq(condition.expr, Column.lit(value).expr)
     new Column(
-      proto.Expression(exprType = proto.Expression.ExprType.UnresolvedFunction(
-          proto.Expression.UnresolvedFunction(functionName = "when", arguments = args))))
+      proto.Expression(exprType =
+        proto.Expression.ExprType.UnresolvedFunction(
+          proto.Expression.UnresolvedFunction(functionName = "when", arguments = args)
+        )
+      )
+    )
   }
 
   /** Provides the default (ELSE) value for a CASE expression. */
@@ -176,16 +199,18 @@ class Column(private[sql] val expr: proto.Expression) {
     requireWhen("otherwise")
     val args = expr.getUnresolvedFunction.arguments ++ Seq(Column.lit(value).expr)
     new Column(
-      proto.Expression(exprType = proto.Expression.ExprType.UnresolvedFunction(
-          proto.Expression.UnresolvedFunction(functionName = "when", arguments = args))))
+      proto.Expression(exprType =
+        proto.Expression.ExprType.UnresolvedFunction(
+          proto.Expression.UnresolvedFunction(functionName = "when", arguments = args)
+        )
+      )
+    )
   }
 
   private def requireWhen(method: String): Unit = {
     val isWhen = expr.exprType.isUnresolvedFunction &&
       expr.getUnresolvedFunction.functionName == "when"
-    require(
-      isWhen,
-      s"$method() can only be applied on a Column previously generated by when()")
+    require(isWhen, s"$method() can only be applied on a Column previously generated by when()")
   }
 
   // -- Windowing -------------------------------------------------------------
@@ -211,11 +236,18 @@ object Column {
   private[sql] def fromName(name: String): Column =
     if (name == "*") {
       new Column(
-        proto.Expression(exprType = proto.Expression.ExprType.UnresolvedStar(proto.Expression.UnresolvedStar())))
+        proto.Expression(exprType =
+          proto.Expression.ExprType.UnresolvedStar(proto.Expression.UnresolvedStar())
+        )
+      )
     } else {
       new Column(
-        proto.Expression(exprType = proto.Expression.ExprType.UnresolvedAttribute(
-            proto.Expression.UnresolvedAttribute(unparsedIdentifier = name))))
+        proto.Expression(exprType =
+          proto.Expression.ExprType.UnresolvedAttribute(
+            proto.Expression.UnresolvedAttribute(unparsedIdentifier = name)
+          )
+        )
+      )
     }
 
   /** Builds an unresolved function call column. */
@@ -224,13 +256,21 @@ object Column {
 
   private[sql] def fnInternal(name: String, isDistinct: Boolean, args: Column*): Column =
     new Column(
-      proto.Expression(exprType = proto.Expression.ExprType.UnresolvedFunction(
+      proto.Expression(exprType =
+        proto.Expression.ExprType.UnresolvedFunction(
           proto.Expression.UnresolvedFunction(
             functionName = name,
             arguments = args.map(_.expr),
-            isDistinct = isDistinct))))
+            isDistinct = isDistinct
+          )
+        )
+      )
+    )
 
-  /** Coerces a value into a Column; existing Columns pass through, everything else becomes a literal. */
+  /**
+   * Coerces a value into a Column; existing Columns pass through, everything else becomes a
+   * literal.
+   */
   private[sql] def toCol(value: Any): Column = value match {
     case c: Column => c
     case other => lit(other)
@@ -239,7 +279,10 @@ object Column {
   /** Builds a literal column from a Scala value. */
   private[sql] def lit(value: Any): Column = value match {
     case c: Column => c
-    case _ => new Column(proto.Expression(exprType = proto.Expression.ExprType.Literal(toLiteralProto(value))))
+    case _ =>
+      new Column(
+        proto.Expression(exprType = proto.Expression.ExprType.Literal(toLiteralProto(value)))
+      )
   }
 
   private val MICROS_PER_SECOND = 1000000L
@@ -262,7 +305,9 @@ object Column {
           proto.Expression.Literal.Decimal(
             value = d.toPlainString,
             precision = Some(d.precision()),
-            scale = Some(d.scale())))
+            scale = Some(d.scale())
+          )
+        )
       case d: BigDecimal => return toLiteralProto(d.bigDecimal)
       case d: java.time.LocalDate => LiteralType.Date(d.toEpochDay.toInt)
       case d: java.sql.Date => LiteralType.Date(d.toLocalDate.toEpochDay.toInt)
@@ -275,7 +320,8 @@ object Column {
       case m: Map[?, ?] => mapLiteral(m)
       case other =>
         throw new IllegalArgumentException(
-          s"Unsupported literal value of type ${other.getClass.getName}: $other")
+          s"Unsupported literal value of type ${other.getClass.getName}: $other"
+        )
     }
     proto.Expression.Literal(literalType = lt)
   }
@@ -288,7 +334,9 @@ object Column {
     proto.Expression.Literal.LiteralType.Array(
       proto.Expression.Literal.Array(
         elementType = Some(DataTypeProtoConverter.toConnectProtoType(elementType)),
-        elements = values.map(toLiteralProto)))
+        elements = values.map(toLiteralProto)
+      )
+    )
   }
 
   private def mapLiteral(m: Map[?, ?]): proto.Expression.Literal.LiteralType = {
@@ -299,7 +347,9 @@ object Column {
         keyType = Some(DataTypeProtoConverter.toConnectProtoType(keyType)),
         valueType = Some(DataTypeProtoConverter.toConnectProtoType(valueType)),
         keys = m.keys.toSeq.map(toLiteralProto),
-        values = m.values.toSeq.map(toLiteralProto)))
+        values = m.values.toSeq.map(toLiteralProto)
+      )
+    )
   }
 
   private[sql] def inferType(value: Any): DataType = value match {
@@ -322,7 +372,8 @@ object Column {
     case m: Map[?, ?] =>
       MapType(
         m.keys.headOption.map(inferType).getOrElse(StringType),
-        m.values.headOption.map(inferType).getOrElse(StringType))
+        m.values.headOption.map(inferType).getOrElse(StringType)
+      )
     case other =>
       throw new IllegalArgumentException(s"Cannot infer Spark type for ${other.getClass.getName}")
   }

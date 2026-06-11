@@ -35,7 +35,8 @@ import org.apache.spark.sql.Column
 class WindowSpec private[sql] (
     private[sql] val partitionSpec: Seq[proto.Expression],
     private[sql] val orderSpec: Seq[proto.Expression.SortOrder],
-    private[sql] val frame: Option[ProtoFrame]) {
+    private[sql] val frame: Option[ProtoFrame]
+) {
 
   def partitionBy(colName: String, colNames: String*): WindowSpec =
     partitionBy((colName +: colNames).map(Column.fromName)*)
@@ -63,7 +64,10 @@ class WindowSpec private[sql] (
         ProtoFrame(
           frameType = frameType,
           lower = Some(WindowSpec.boundary(start)),
-          upper = Some(WindowSpec.boundary(end)))))
+          upper = Some(WindowSpec.boundary(end))
+        )
+      )
+    )
 
   /** Wraps `column` as a window function over this specification. */
   private[sql] def withAggregate(column: Column): Column = {
@@ -71,7 +75,8 @@ class WindowSpec private[sql] (
       windowFunction = Some(column.expr),
       partitionSpec = partitionSpec,
       orderSpec = orderSpec,
-      frameSpec = frame)
+      frameSpec = frame
+    )
     new Column(proto.Expression(exprType = proto.Expression.ExprType.Window(window)))
   }
 }
@@ -86,7 +91,8 @@ object WindowSpec {
         proto.Expression.SortOrder(
           child = Some(col.expr),
           direction = proto.Expression.SortOrder.SortDirection.SORT_DIRECTION_ASCENDING,
-          nullOrdering = proto.Expression.SortOrder.NullOrdering.SORT_NULLS_FIRST)
+          nullOrdering = proto.Expression.SortOrder.NullOrdering.SORT_NULLS_FIRST
+        )
     }
 
   private def boundary(value: Long): ProtoFrame.FrameBoundary = {

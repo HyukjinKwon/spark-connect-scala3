@@ -42,8 +42,8 @@ import org.apache.spark.sql.types._
  * returned by the server). The Spark-type-to-Arrow-type mapping and the per-cell value conversions
  * here mirror the decode logic in [[SparkResult.getValue]] so that a value round-trips faithfully.
  *
- * Modelled on the same-author Ruby reference (`spark_connect/arrow.rb`,
- * `from_rows` / `build_arrow_schema` / `arrow_field_type`).
+ * Modelled on the same-author Ruby reference (`spark_connect/arrow.rb`, `from_rows` /
+ * `build_arrow_schema` / `arrow_field_type`).
  */
 object ArrowSerializer {
 
@@ -53,16 +53,21 @@ object ArrowSerializer {
   /**
    * Serializes `rows` into a single, self-contained Arrow IPC stream (schema + one record batch).
    *
-   * @param rows      the local data, one inner `Seq` per row, ordered to match `schema.fields`.
-   * @param schema    the Spark schema describing the columns.
-   * @param allocator the Arrow [[BufferAllocator]] used to back the vectors (caller owns its
-   *                  lifecycle; the [[VectorSchemaRoot]] created here is closed before returning).
-   * @return the Arrow IPC stream bytes.
+   * @param rows
+   *   the local data, one inner `Seq` per row, ordered to match `schema.fields`.
+   * @param schema
+   *   the Spark schema describing the columns.
+   * @param allocator
+   *   the Arrow [[BufferAllocator]] used to back the vectors (caller owns its lifecycle; the
+   *   [[VectorSchemaRoot]] created here is closed before returning).
+   * @return
+   *   the Arrow IPC stream bytes.
    */
   def serialize(
       rows: Seq[Seq[Any]],
       schema: StructType,
-      allocator: BufferAllocator): Array[Byte] = {
+      allocator: BufferAllocator
+  ): Array[Byte] = {
     val arrowSchema = toArrowSchema(schema)
     val root = VectorSchemaRoot.create(arrowSchema, allocator)
     val out = new ByteArrayOutputStream()
@@ -90,12 +95,8 @@ object ArrowSerializer {
         }
         writer.writeBatch()
         writer.end()
-      } finally {
-        writer.close()
-      }
-    } finally {
-      root.close()
-    }
+      } finally writer.close()
+    } finally root.close()
     out.toByteArray
   }
 
@@ -108,7 +109,7 @@ object ArrowSerializer {
     new Schema(schema.fields.map(f => toArrowField(f.name, f.dataType, f.nullable)).toList.asJava)
 
   /** Builds an Arrow [[Field]] (with nested children) from a Spark [[DataType]]. */
-  private def toArrowField(name: String, dataType: DataType, nullable: Boolean): Field = {
+  private def toArrowField(name: String, dataType: DataType, nullable: Boolean): Field =
     dataType match {
       case ArrayType(elementType, containsNull) =>
         val fieldType = new FieldType(nullable, ArrowType.List.INSTANCE, null)
@@ -123,25 +124,26 @@ object ArrowSerializer {
 
       case MapType(keyType, valueType, valueContainsNull) =>
         // Arrow maps are a List<Struct<key, value>>; keysSorted = false.
-        val fieldType = new FieldType(nullable, new ArrowType.Map(/* keysSorted = */ false), null)
+        val fieldType = new FieldType(nullable, new ArrowType.Map( /* keysSorted = */ false), null)
         val entries = new Field(
           MapVector.DATA_VECTOR_NAME,
           // Map entries (the struct) are non-nullable per the Arrow spec.
           new FieldType(false, ArrowType.Struct.INSTANCE, null),
           List(
             toArrowField(MapVector.KEY_NAME, keyType, nullable = false),
-            toArrowField(MapVector.VALUE_NAME, valueType, valueContainsNull)).asJava)
+            toArrowField(MapVector.VALUE_NAME, valueType, valueContainsNull)
+          ).asJava
+        )
         new Field(name, fieldType, List(entries).asJava)
 
       case other =>
         // Leaf/atomic types: no children.
         new Field(name, new FieldType(nullable, toArrowType(other), null), null)
     }
-  }
 
   /**
-   * Maps a Spark primitive/atomic [[DataType]] to the corresponding Arrow [[ArrowType]].
-   * Nested types (Array/Struct/Map) are handled in [[toArrowField]]. Unknown types default to Utf8,
+   * Maps a Spark primitive/atomic [[DataType]] to the corresponding Arrow [[ArrowType]]. Nested
+   * types (Array/Struct/Map) are handled in [[toArrowField]]. Unknown types default to Utf8,
    * matching the Ruby reference's `:string` default.
    */
   private def toArrowType(dataType: DataType): ArrowType = dataType match {
@@ -207,7 +209,8 @@ object ArrowSerializer {
         setMap(v, i, value, dataType.asInstanceOf[MapType])
       case other =>
         throw new UnsupportedOperationException(
-          s"Cannot set value into Arrow vector of type ${other.getClass.getName}")
+          s"Cannot set value into Arrow vector of type ${other.getClass.getName}"
+        )
     }
   }
 
@@ -259,7 +262,8 @@ object ArrowSerializer {
       vector: StructVector,
       index: Int,
       value: Any,
-      structType: StructType): Unit = {
+      structType: StructType
+  ): Unit = {
     vector.setIndexDefined(index)
     val values = toSeq(value)
     val children = vector.getChildrenFromFields
@@ -278,7 +282,8 @@ object ArrowSerializer {
       case m: java.util.Map[_, _] => m.asScala.toSeq
       case other =>
         throw new IllegalArgumentException(
-          s"Cannot encode value of type ${other.getClass.getName} as a MapType")
+          s"Cannot encode value of type ${other.getClass.getName} as a MapType"
+        )
     }
     val writer: UnionMapWriter = vector.getWriter
     writer.setPosition(index)
@@ -297,7 +302,11 @@ object ArrowSerializer {
    * map writers expose directly are supported here; richer nesting inside maps is intentionally out
    * of scope for this best-effort path.
    */
-  private def writeScalar(writer: org.apache.arrow.vector.complex.writer.BaseWriter, value: Any, dataType: DataType): Unit = {
+  private def writeScalar(
+      writer: org.apache.arrow.vector.complex.writer.BaseWriter,
+      value: Any,
+      dataType: DataType
+  ): Unit = {
     import org.apache.arrow.vector.complex.writer._
     (writer, dataType) match {
       case (w: BitWriter, BooleanType) => w.writeBit(if (toBoolean(value)) 1 else 0)
@@ -311,7 +320,8 @@ object ArrowSerializer {
         w.writeVarChar(value.toString)
       case (other, _) =>
         throw new UnsupportedOperationException(
-          s"Unsupported map scalar writer ${other.getClass.getName} for type ${dataType.simpleString}")
+          s"Unsupported map scalar writer ${other.getClass.getName} for type ${dataType.simpleString}"
+        )
     }
   }
 
@@ -412,5 +422,6 @@ object ArrowSerializer {
 
   private def coerceError(value: Any, target: String): IllegalArgumentException =
     new IllegalArgumentException(
-      s"Cannot coerce value of type ${value.getClass.getName} to $target")
+      s"Cannot coerce value of type ${value.getClass.getName} to $target"
+    )
 }

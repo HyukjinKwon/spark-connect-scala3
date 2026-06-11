@@ -19,6 +19,7 @@ package org.apache.spark.sql
 
 import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.functions._
+import org.apache.spark.sql.types._
 
 /**
  * End-to-end tests that run against a real Spark Connect server.
@@ -36,15 +37,13 @@ class IntegrationSuite extends munit.FunSuite {
 
   private var spark: SparkSession = null
 
-  override def beforeAll(): Unit = {
+  override def beforeAll(): Unit =
     if (!munitIgnore) {
       spark = SparkSession.builder.remote(remote).create()
     }
-  }
 
-  override def afterAll(): Unit = {
+  override def afterAll(): Unit =
     if (spark != null) spark.stop()
-  }
 
   test("range + filter + collect") {
     val rows = spark.range(10).filter(col("id") % 2 === 0).collect()
@@ -123,7 +122,8 @@ class IntegrationSuite extends munit.FunSuite {
         upper(col("s")).as("u"),
         lower(col("s")).as("l"),
         length(col("s")).as("len"),
-        concat(col("s"), lit("!")).as("c"))
+        concat(col("s"), lit("!")).as("c")
+      )
       .collect()
       .head
     assertEquals(row.getString(0), "HELLO")
@@ -136,5 +136,79 @@ class IntegrationSuite extends munit.FunSuite {
     spark.range(4).createOrReplaceTempView("scs3_view")
     val n = spark.sql("select count(*) as c from scs3_view").collect().head.getLong(0)
     assertEquals(n, 4L)
+  }
+
+  test("createDataFrame round-trips local rows including nulls") {
+    val schema = StructType(
+      Array(
+        StructField("id", IntegerType),
+        StructField("name", StringType),
+        StructField("score", DoubleType)
+      )
+    )
+    val df = spark.createDataFrame(
+      Seq(Row(1, "alice", 9.5), Row(2, null, 7.0), Row(3, "carol", 3.0)),
+      schema
+    )
+    val rows = df.orderBy("id").collect()
+    assertEquals(rows.length, 3)
+    assertEquals(rows(0).getInt(0), 1)
+    assertEquals(rows(0).getString(1), "alice")
+    assertEquals(rows(0).getDouble(2), 9.5)
+    assert(rows(1).isNullAt(1))
+  }
+
+  test("na.drop and na.fill handle missing values") {
+    val schema = StructType(Array(StructField("a", StringType), StructField("b", IntegerType)))
+    val df = spark.createDataFrame(Seq(Row("x", 1), Row(null, 2), Row("y", null)), schema)
+    assertEquals(df.na.drop().count(), 1L)
+    assertEquals(df.na.fill("NA").filter(col("a") === "NA").count(), 1L)
+  }
+
+  test("stat.corr computes correlation") {
+    val df = spark.range(1, 100).select(col("id"), (col("id") * 2).as("d"))
+    assert(math.abs(df.stat.corr("id", "d") - 1.0) < 1e-6)
+  }
+
+  test("describe and summary produce statistics") {
+    val df = spark.range(1, 50).select(col("id"))
+    assert(df.describe("id").collect().nonEmpty)
+    assert(df.summary().collect().nonEmpty)
+  }
+
+  test("catalog lists tables and reports existence") {
+    spark.range(5).createOrReplaceTempView("scs3_cat_view")
+    assert(spark.catalog.tableExists("scs3_cat_view"))
+    assert(spark.catalog.listTables().collect().exists(_.getString(0) == "scs3_cat_view"))
+    assertEquals(spark.table("scs3_cat_view").count(), 5L)
+    assert(spark.catalog.currentDatabase.nonEmpty)
+  }
+
+  test("observe collects named metrics") {
+    val obs = new Observation("it_metrics")
+    spark.range(10).observe(obs, count(lit(1)).as("cnt"), sum("id").as("total")).collect()
+    val metrics = obs.get
+    assertEquals(metrics("cnt"), 10L)
+    assertEquals(metrics("total"), 45L)
+  }
+
+  test("write.parquet and read.parquet round-trip") {
+    val dir = java.nio.file.Files.createTempDirectory("scs3-it").toString + "/data"
+    spark.range(20).select(col("id"), (col("id") % 4).as("g")).write.mode("overwrite").parquet(dir)
+    assertEquals(spark.read.parquet(dir).count(), 20L)
+  }
+
+  test("declarative pipeline creates a dataflow graph (Spark 4.1+)") {
+    assume(atLeastSpark(4, 1), "Declarative pipelines require Spark 4.1 or newer")
+    val pipeline = spark.pipeline()
+    assert(pipeline != null)
+  }
+
+  /** True if the connected server is at least the given Spark major.minor version. */
+  private def atLeastSpark(major: Int, minor: Int): Boolean = {
+    val parts = spark.version.split("\\.")
+    val maj = parts.lift(0).flatMap(_.takeWhile(_.isDigit).toIntOption).getOrElse(0)
+    val min = parts.lift(1).flatMap(_.takeWhile(_.isDigit).toIntOption).getOrElse(0)
+    maj > major || (maj == major && min >= minor)
   }
 }

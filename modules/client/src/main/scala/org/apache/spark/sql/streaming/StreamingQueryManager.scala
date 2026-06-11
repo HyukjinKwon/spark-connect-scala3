@@ -49,54 +49,49 @@ class StreamingQueryManager private[sql] (spark: SparkSession) {
    * Waits until any of the active queries on the associated session terminates, blocking the
    * current thread.
    *
-   * @return whether any query has terminated.
+   * @return
+   *   whether any query has terminated.
    */
   def awaitAnyTermination(): Boolean =
     command(
-      _.withAwaitAnyTermination(
-        proto.StreamingQueryManagerCommand.AwaitAnyTerminationCommand()))
-      .getAwaitAnyTermination.terminated
+      _.withAwaitAnyTermination(proto.StreamingQueryManagerCommand.AwaitAnyTerminationCommand())
+    ).getAwaitAnyTermination.terminated
 
   /**
    * Waits until any of the active queries on the associated session terminates, blocking the
    * current thread, or until `timeoutMs` milliseconds have elapsed.
    *
-   * @return whether any query has terminated within the timeout.
+   * @return
+   *   whether any query has terminated within the timeout.
    */
   def awaitAnyTermination(timeoutMs: Long): Boolean =
     command(
       _.withAwaitAnyTermination(
-        proto.StreamingQueryManagerCommand.AwaitAnyTerminationCommand(
-          timeoutMs = Some(timeoutMs))))
-      .getAwaitAnyTermination.terminated
+        proto.StreamingQueryManagerCommand.AwaitAnyTerminationCommand(timeoutMs = Some(timeoutMs))
+      )
+    ).getAwaitAnyTermination.terminated
 
   /**
    * Forgets about the past terminated queries so that [[awaitAnyTermination()]] can be used again
    * to wait for new terminations.
    */
-  def resetTerminated(): Unit = {
+  def resetTerminated(): Unit =
     command(_.withResetTerminated(true))
-  }
 
   private def toStreamingQuery(
-      instance: proto.StreamingQueryManagerCommandResult.StreamingQueryInstance)
-      : StreamingQuery = {
+      instance: proto.StreamingQueryManagerCommandResult.StreamingQueryInstance
+  ): StreamingQuery = {
     val instanceId = instance.getId
-    new StreamingQuery(
-      spark,
-      instanceId.id,
-      instanceId.runId,
-      instance.name.orNull)
+    new StreamingQuery(spark, instanceId.id, instanceId.runId, instance.name.orNull)
   }
 
   /**
    * Builds a [[proto.StreamingQueryManagerCommand]] by applying `f`, sends it as a command plan,
-   * drains the response stream and returns the typed
-   * [[proto.StreamingQueryManagerCommandResult]].
+   * drains the response stream and returns the typed [[proto.StreamingQueryManagerCommandResult]].
    */
   private def command(
-      f: proto.StreamingQueryManagerCommand => proto.StreamingQueryManagerCommand)
-      : proto.StreamingQueryManagerCommandResult = {
+      f: proto.StreamingQueryManagerCommand => proto.StreamingQueryManagerCommand
+  ): proto.StreamingQueryManagerCommandResult = {
     val cmd = f(proto.StreamingQueryManagerCommand())
     val commandProto =
       proto.Command(commandType = proto.Command.CommandType.StreamingQueryManagerCommand(cmd))
@@ -110,7 +105,7 @@ class StreamingQueryManager private[sql] (spark: SparkSession) {
       }
     }
     result.getOrElse(
-      throw new IllegalStateException(
-        "Server did not return a StreamingQueryManagerCommandResult"))
+      throw new IllegalStateException("Server did not return a StreamingQueryManagerCommandResult")
+    )
   }
 }

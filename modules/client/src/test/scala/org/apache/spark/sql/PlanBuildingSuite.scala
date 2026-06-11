@@ -82,7 +82,8 @@ class PlanBuildingSuite extends munit.FunSuite {
       assertEquals(df.relation.getSort.order.size, 1)
       assertEquals(
         df.relation.getSort.order.head.direction,
-        proto.Expression.SortOrder.SortDirection.SORT_DIRECTION_DESCENDING)
+        proto.Expression.SortOrder.SortDirection.SORT_DIRECTION_DESCENDING
+      )
     }
   }
 
@@ -100,18 +101,14 @@ class PlanBuildingSuite extends munit.FunSuite {
   test("rollup produces a ROLLUP aggregate") {
     withSession { spark =>
       val df = spark.range(10).rollup(col("id")).agg(count(lit(1)))
-      assertEquals(
-        df.relation.getAggregate.groupType,
-        proto.Aggregate.GroupType.GROUP_TYPE_ROLLUP)
+      assertEquals(df.relation.getAggregate.groupType, proto.Aggregate.GroupType.GROUP_TYPE_ROLLUP)
     }
   }
 
   test("cube produces a CUBE aggregate") {
     withSession { spark =>
       val df = spark.range(10).cube(col("id")).agg(count(lit(1)))
-      assertEquals(
-        df.relation.getAggregate.groupType,
-        proto.Aggregate.GroupType.GROUP_TYPE_CUBE)
+      assertEquals(df.relation.getAggregate.groupType, proto.Aggregate.GroupType.GROUP_TYPE_CUBE)
     }
   }
 
@@ -172,9 +169,7 @@ class PlanBuildingSuite extends munit.FunSuite {
     withSession { spark =>
       val df = spark.range(10).union(spark.range(10))
       assert(df.relation.relType.isSetOp)
-      assertEquals(
-        df.relation.getSetOp.setOpType,
-        proto.SetOperation.SetOpType.SET_OP_TYPE_UNION)
+      assertEquals(df.relation.getSetOp.setOpType, proto.SetOperation.SetOpType.SET_OP_TYPE_UNION)
     }
   }
 
@@ -183,16 +178,15 @@ class PlanBuildingSuite extends munit.FunSuite {
       val df = spark.range(10).intersect(spark.range(10))
       assertEquals(
         df.relation.getSetOp.setOpType,
-        proto.SetOperation.SetOpType.SET_OP_TYPE_INTERSECT)
+        proto.SetOperation.SetOpType.SET_OP_TYPE_INTERSECT
+      )
     }
   }
 
   test("except produces SET_OP_TYPE_EXCEPT") {
     withSession { spark =>
       val df = spark.range(10).except(spark.range(10))
-      assertEquals(
-        df.relation.getSetOp.setOpType,
-        proto.SetOperation.SetOpType.SET_OP_TYPE_EXCEPT)
+      assertEquals(df.relation.getSetOp.setOpType, proto.SetOperation.SetOpType.SET_OP_TYPE_EXCEPT)
     }
   }
 

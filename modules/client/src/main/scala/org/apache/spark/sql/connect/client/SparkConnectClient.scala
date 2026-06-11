@@ -29,12 +29,13 @@ import org.apache.spark.connect.proto
  * The low-level client that talks to a Spark Connect server over gRPC.
  *
  * It owns the gRPC channel, the (stable) session id, the user context and the user agent, and
- * exposes the four core RPCs used by the public API: `ExecutePlan`, `AnalyzePlan`, `Config`
- * and `Interrupt`.
+ * exposes the four core RPCs used by the public API: `ExecutePlan`, `AnalyzePlan`, `Config` and
+ * `Interrupt`.
  */
 class SparkConnectClient private[sql] (
     private[sql] val configuration: SparkConnectClient.Configuration,
-    private[sql] val channel: ManagedChannel) {
+    private[sql] val channel: ManagedChannel
+) {
 
   import SparkConnectClient._
 
@@ -50,7 +51,8 @@ class SparkConnectClient private[sql] (
   private[sql] def userContext: proto.UserContext =
     proto.UserContext(
       userId = configuration.userId.getOrElse(""),
-      userName = configuration.userName.getOrElse(configuration.userId.getOrElse("")))
+      userName = configuration.userName.getOrElse(configuration.userId.getOrElse(""))
+    )
 
   // ---------------------------------------------------------------------------
   // ExecutePlan
@@ -61,7 +63,8 @@ class SparkConnectClient private[sql] (
       sessionId = sessionId,
       userContext = Some(userContext),
       plan = Some(plan),
-      clientType = Some(userAgent))
+      clientType = Some(userAgent)
+    )
     stub.executePlan(request)
   }
 
@@ -69,68 +72,78 @@ class SparkConnectClient private[sql] (
   // AnalyzePlan
   // ---------------------------------------------------------------------------
 
-  private[sql] def analyze(
-      analyze: proto.AnalyzePlanRequest.Analyze): proto.AnalyzePlanResponse = {
+  private[sql] def analyze(analyze: proto.AnalyzePlanRequest.Analyze): proto.AnalyzePlanResponse = {
     val request = proto.AnalyzePlanRequest(
       sessionId = sessionId,
       userContext = Some(userContext),
       clientType = Some(userAgent),
-      analyze = analyze)
+      analyze = analyze
+    )
     stub.analyzePlan(request)
   }
 
   private[sql] def analyzeSchema(plan: proto.Plan): proto.DataType =
     analyze(
       proto.AnalyzePlanRequest.Analyze
-        .Schema(proto.AnalyzePlanRequest.Schema(plan = Some(plan)))).getSchema.getSchema
+        .Schema(proto.AnalyzePlanRequest.Schema(plan = Some(plan)))
+    ).getSchema.getSchema
 
   private[sql] def explainString(
       plan: proto.Plan,
-      mode: proto.AnalyzePlanRequest.Explain.ExplainMode): String =
+      mode: proto.AnalyzePlanRequest.Explain.ExplainMode
+  ): String =
     analyze(
       proto.AnalyzePlanRequest.Analyze.Explain(
-        proto.AnalyzePlanRequest.Explain(
-          plan = Some(plan),
-          explainMode = mode))).getExplain.explainString
+        proto.AnalyzePlanRequest.Explain(plan = Some(plan), explainMode = mode)
+      )
+    ).getExplain.explainString
 
   private[sql] def treeString(plan: proto.Plan, level: Option[Int]): String =
     analyze(
       proto.AnalyzePlanRequest.Analyze.TreeString(
-        proto.AnalyzePlanRequest.TreeString(
-          plan = Some(plan),
-          level = level))).getTreeString.treeString
+        proto.AnalyzePlanRequest.TreeString(plan = Some(plan), level = level)
+      )
+    ).getTreeString.treeString
 
   private[sql] def isLocal(plan: proto.Plan): Boolean =
     analyze(
       proto.AnalyzePlanRequest.Analyze
-        .IsLocal(proto.AnalyzePlanRequest.IsLocal(plan = Some(plan)))).getIsLocal.isLocal
+        .IsLocal(proto.AnalyzePlanRequest.IsLocal(plan = Some(plan)))
+    ).getIsLocal.isLocal
 
   private[sql] def isStreaming(plan: proto.Plan): Boolean =
     analyze(
       proto.AnalyzePlanRequest.Analyze.IsStreaming(
-        proto.AnalyzePlanRequest.IsStreaming(plan = Some(plan)))).getIsStreaming.isStreaming
+        proto.AnalyzePlanRequest.IsStreaming(plan = Some(plan))
+      )
+    ).getIsStreaming.isStreaming
 
   private[sql] def inputFiles(plan: proto.Plan): Seq[String] =
     analyze(
       proto.AnalyzePlanRequest.Analyze.InputFiles(
-        proto.AnalyzePlanRequest.InputFiles(plan = Some(plan)))).getInputFiles.files
+        proto.AnalyzePlanRequest.InputFiles(plan = Some(plan))
+      )
+    ).getInputFiles.files
 
   private[sql] def sparkVersion: String =
     analyze(
       proto.AnalyzePlanRequest.Analyze
-        .SparkVersion(proto.AnalyzePlanRequest.SparkVersion())).getSparkVersion.version
+        .SparkVersion(proto.AnalyzePlanRequest.SparkVersion())
+    ).getSparkVersion.version
 
   private[sql] def semanticHash(plan: proto.Plan): Int =
     analyze(
       proto.AnalyzePlanRequest.Analyze.SemanticHash(
-        proto.AnalyzePlanRequest.SemanticHash(plan = Some(plan)))).getSemanticHash.result
+        proto.AnalyzePlanRequest.SemanticHash(plan = Some(plan))
+      )
+    ).getSemanticHash.result
 
   private[sql] def sameSemantics(plan: proto.Plan, otherPlan: proto.Plan): Boolean =
     analyze(
       proto.AnalyzePlanRequest.Analyze.SameSemantics(
-        proto.AnalyzePlanRequest.SameSemantics(
-          targetPlan = Some(plan),
-          otherPlan = Some(otherPlan)))).getSameSemantics.result
+        proto.AnalyzePlanRequest.SameSemantics(targetPlan = Some(plan), otherPlan = Some(otherPlan))
+      )
+    ).getSameSemantics.result
 
   // ---------------------------------------------------------------------------
   // Config
@@ -141,25 +154,29 @@ class SparkConnectClient private[sql] (
       sessionId = sessionId,
       userContext = Some(userContext),
       clientType = Some(userAgent),
-      operation = Some(operation))
+      operation = Some(operation)
+    )
     stub.config(request)
   }
 
   private[sql] def setConf(key: String, value: String): Unit =
     config(
       proto.ConfigRequest.Operation(
-        proto.ConfigRequest.Operation.OpType.Set(
-          proto.ConfigRequest.Set(pairs = Seq(proto.KeyValue(key = key, value = Some(value)))))))
+        proto.ConfigRequest.Operation.OpType
+          .Set(proto.ConfigRequest.Set(pairs = Seq(proto.KeyValue(key = key, value = Some(value)))))
+      )
+    )
 
   private[sql] def getConf(key: String): String =
-    getConfOption(key).getOrElse(
-      throw new NoSuchElementException(s"Config key not found: $key"))
+    getConfOption(key).getOrElse(throw new NoSuchElementException(s"Config key not found: $key"))
 
   private[sql] def getConfOption(key: String): Option[String] = {
     val response = config(
       proto.ConfigRequest.Operation(
-        proto.ConfigRequest.Operation.OpType.GetOption(
-          proto.ConfigRequest.GetOption(keys = Seq(key)))))
+        proto.ConfigRequest.Operation.OpType
+          .GetOption(proto.ConfigRequest.GetOption(keys = Seq(key)))
+      )
+    )
     response.pairs.headOption.flatMap(_.value)
   }
 
@@ -168,21 +185,29 @@ class SparkConnectClient private[sql] (
       proto.ConfigRequest.Operation(
         proto.ConfigRequest.Operation.OpType.GetWithDefault(
           proto.ConfigRequest.GetWithDefault(
-            pairs = Seq(proto.KeyValue(key = key, value = Some(default)))))))
+            pairs = Seq(proto.KeyValue(key = key, value = Some(default)))
+          )
+        )
+      )
+    )
     response.pairs.headOption.flatMap(_.value).getOrElse(default)
   }
 
   private[sql] def getAllConfs: Map[String, String] = {
     val response = config(
       proto.ConfigRequest.Operation(
-        proto.ConfigRequest.Operation.OpType.GetAll(proto.ConfigRequest.GetAll())))
+        proto.ConfigRequest.Operation.OpType.GetAll(proto.ConfigRequest.GetAll())
+      )
+    )
     response.pairs.map(kv => kv.key -> kv.value.getOrElse("")).toMap
   }
 
   private[sql] def unsetConf(key: String): Unit =
     config(
       proto.ConfigRequest.Operation(
-        proto.ConfigRequest.Operation.OpType.Unset(proto.ConfigRequest.Unset(keys = Seq(key)))))
+        proto.ConfigRequest.Operation.OpType.Unset(proto.ConfigRequest.Unset(keys = Seq(key)))
+      )
+    )
 
   // ---------------------------------------------------------------------------
   // Interrupt & lifecycle
@@ -194,7 +219,9 @@ class SparkConnectClient private[sql] (
         sessionId = sessionId,
         userContext = Some(userContext),
         clientType = Some(userAgent),
-        interruptType = proto.InterruptRequest.InterruptType.INTERRUPT_TYPE_ALL))
+        interruptType = proto.InterruptRequest.InterruptType.INTERRUPT_TYPE_ALL
+      )
+    )
     response.interruptedIds
   }
 
@@ -205,7 +232,9 @@ class SparkConnectClient private[sql] (
         userContext = Some(userContext),
         clientType = Some(userAgent),
         interruptType = proto.InterruptRequest.InterruptType.INTERRUPT_TYPE_TAG,
-        interrupt = proto.InterruptRequest.Interrupt.OperationTag(tag)))
+        interrupt = proto.InterruptRequest.Interrupt.OperationTag(tag)
+      )
+    )
     response.interruptedIds
   }
 
@@ -224,8 +253,7 @@ object SparkConnectClient {
   def builder(): Builder = new Builder()
 
   /**
-   * Immutable connection configuration. Construct via [[Builder]] or
-   * [[Builder.connectionString]].
+   * Immutable connection configuration. Construct via [[Builder]] or [[Builder.connectionString]].
    */
   case class Configuration(
       host: String = "localhost",
@@ -237,7 +265,8 @@ object SparkConnectClient {
       userAgent: String = Configuration.DEFAULT_USER_AGENT,
       sessionId: Option[String] = None,
       metadata: Map[String, String] = Map.empty,
-      maxInboundMessageSize: Int = Configuration.MAX_MESSAGE_SIZE) {
+      maxInboundMessageSize: Int = Configuration.MAX_MESSAGE_SIZE
+  ) {
 
     def toChannel: ManagedChannel = {
       val builder = ManagedChannelBuilder.forAddress(host, port)
@@ -248,7 +277,8 @@ object SparkConnectClient {
       token.foreach { t =>
         headers.put(
           GrpcMetadata.Key.of("authorization", GrpcMetadata.ASCII_STRING_MARSHALLER),
-          s"Bearer $t")
+          s"Bearer $t"
+        )
       }
       metadata.foreach { case (k, v) =>
         headers.put(GrpcMetadata.Key.of(k, GrpcMetadata.ASCII_STRING_MARSHALLER), v)
@@ -265,7 +295,8 @@ object SparkConnectClient {
   object Configuration {
     val DEFAULT_PORT = 15002
     val MAX_MESSAGE_SIZE: Int = 128 * 1024 * 1024
-    val DEFAULT_USER_AGENT: String = sys.env.getOrElse("SPARK_CONNECT_USER_AGENT", "spark-connect-scala3")
+    val DEFAULT_USER_AGENT: String =
+      sys.env.getOrElse("SPARK_CONNECT_USER_AGENT", "spark-connect-scala3")
   }
 
   /** Fluent builder for a [[SparkConnectClient]]. */
@@ -334,10 +365,12 @@ object SparkConnectClient {
 
   private[client] def parseConnectionString(
       connectionString: String,
-      base: Configuration): Configuration = {
+      base: Configuration
+  ): Configuration = {
     require(
       connectionString.startsWith(SC_PREFIX),
-      s"Connection string must start with '$SC_PREFIX', but was: $connectionString")
+      s"Connection string must start with '$SC_PREFIX', but was: $connectionString"
+    )
 
     val withoutPrefix = connectionString.stripPrefix(SC_PREFIX)
     val slashIdx = withoutPrefix.indexOf('/')
@@ -354,7 +387,8 @@ object SparkConnectClient {
         val host = endpoint.substring(0, colonIdx)
         val portStr = endpoint.substring(colonIdx + 1)
         val port = portStr.toIntOption.getOrElse(
-          throw new IllegalArgumentException(s"Invalid port in connection string: $portStr"))
+          throw new IllegalArgumentException(s"Invalid port in connection string: $portStr")
+        )
         config = config.copy(host = host, port = port)
       }
     }

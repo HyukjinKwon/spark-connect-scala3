@@ -24,12 +24,12 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.types.StructType
 
 /**
- * Loads a streaming [[DataFrame]] from a streaming source. Use `SparkSession.readStream` to
- * access this.
+ * Loads a streaming [[DataFrame]] from a streaming source. Use `SparkSession.readStream` to access
+ * this.
  *
  * Mirrors the public surface of `org.apache.spark.sql.streaming.DataStreamReader` over the Spark
- * Connect protocol. A streaming read is expressed as a `Read` relation whose `is_streaming` flag
- * is set, so the resulting [[DataFrame]] is unbounded and is meant to be consumed through a
+ * Connect protocol. A streaming read is expressed as a `Read` relation whose `is_streaming` flag is
+ * set, so the resulting [[DataFrame]] is unbounded and is meant to be consumed through a
  * [[DataStreamWriter]].
  *
  * @example
@@ -46,7 +46,8 @@ class DataStreamReader private[sql] (spark: SparkSession) {
   /**
    * Specifies the input data source format (e.g. `"rate"`, `"kafka"`).
    *
-   * @return this reader, for chaining.
+   * @return
+   *   this reader, for chaining.
    */
   def format(source: String): DataStreamReader = {
     this.source = Option(source)
@@ -56,7 +57,8 @@ class DataStreamReader private[sql] (spark: SparkSession) {
   /**
    * Specifies the input schema using a DDL-formatted string (e.g. `"a INT, b STRING"`).
    *
-   * @return this reader, for chaining.
+   * @return
+   *   this reader, for chaining.
    */
   def schema(schemaString: String): DataStreamReader = {
     this.userSchema = Option(schemaString)
@@ -66,7 +68,8 @@ class DataStreamReader private[sql] (spark: SparkSession) {
   /**
    * Specifies the input schema using a [[StructType]].
    *
-   * @return this reader, for chaining.
+   * @return
+   *   this reader, for chaining.
    */
   def schema(schema: StructType): DataStreamReader = {
     this.userSchema = Option(schema.simpleString)
@@ -76,7 +79,8 @@ class DataStreamReader private[sql] (spark: SparkSession) {
   /**
    * Adds an input option for the underlying data source.
    *
-   * @return this reader, for chaining.
+   * @return
+   *   this reader, for chaining.
    */
   def option(key: String, value: String): DataStreamReader = {
     extraOptions += (key -> value)
@@ -95,7 +99,8 @@ class DataStreamReader private[sql] (spark: SparkSession) {
   /**
    * Adds multiple input options.
    *
-   * @return this reader, for chaining.
+   * @return
+   *   this reader, for chaining.
    */
   def options(options: Map[String, String]): DataStreamReader = {
     extraOptions ++= options
@@ -111,7 +116,8 @@ class DataStreamReader private[sql] (spark: SparkSession) {
       format = source,
       schema = userSchema,
       options = extraOptions.toMap,
-      paths = Seq.empty)
+      paths = Seq.empty
+    )
     streamRelation(proto.Read.ReadType.DataSource(dataSource))
   }
 
@@ -121,15 +127,15 @@ class DataStreamReader private[sql] (spark: SparkSession) {
       format = source,
       schema = userSchema,
       options = extraOptions.toMap,
-      paths = Seq(path))
+      paths = Seq(path)
+    )
     streamRelation(proto.Read.ReadType.DataSource(dataSource))
   }
 
   /** Loads a streaming [[DataFrame]] from a registered table. */
   def table(tableName: String): DataFrame = {
-    val namedTable = proto.Read.NamedTable(
-      unparsedIdentifier = tableName,
-      options = extraOptions.toMap)
+    val namedTable =
+      proto.Read.NamedTable(unparsedIdentifier = tableName, options = extraOptions.toMap)
     streamRelation(proto.Read.ReadType.NamedTable(namedTable))
   }
 
@@ -153,6 +159,6 @@ class DataStreamReader private[sql] (spark: SparkSession) {
 
   private def streamRelation(readType: proto.Read.ReadType): DataFrame =
     spark.newDataFrame(
-      proto.Relation.RelType.Read(
-        proto.Read(isStreaming = true, readType = readType)))
+      proto.Relation.RelType.Read(proto.Read(isStreaming = true, readType = readType))
+    )
 }

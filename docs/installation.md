@@ -9,17 +9,45 @@
 
 ## Add the dependency
 
-In `build.sbt`:
+The current release is `0.1.0`. Scala 3 artifacts carry the `_3` suffix, so the
+fully qualified Maven artifact id is `spark-connect-scala3-client_3`.
+
+sbt (`build.sbt`):
 
 ```scala
-libraryDependencies += "io.github.hyukjinkwon" %% "spark-connect-scala3-client" % "<version>"
+libraryDependencies += "io.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.1.0"
 ```
 
-The latest release version is shown on the
-[Maven Central page](https://central.sonatype.com/artifact/io.github.hyukjinkwon/spark-connect-scala3-client_3).
+sbt with an explicit Scala suffix:
 
-For Mill, Gradle, or Maven, use the fully qualified artifact name
-`spark-connect-scala3-client_3`.
+```scala
+libraryDependencies += "io.github.hyukjinkwon" % "spark-connect-scala3-client_3" % "0.1.0"
+```
+
+Maven (`pom.xml`):
+
+```xml
+<dependency>
+  <groupId>io.github.hyukjinkwon</groupId>
+  <artifactId>spark-connect-scala3-client_3</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
+Gradle (`build.gradle.kts`):
+
+```kotlin
+implementation("io.github.hyukjinkwon:spark-connect-scala3-client_3:0.1.0")
+```
+
+Mill (`build.sc`):
+
+```scala
+ivy"io.github.hyukjinkwon::spark-connect-scala3-client:0.1.0"
+```
+
+The published versions are listed on the
+[Maven Central page](https://central.sonatype.com/artifact/io.github.hyukjinkwon/spark-connect-scala3-client_3).
 
 ## JVM flags for Apache Arrow
 

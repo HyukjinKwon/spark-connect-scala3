@@ -22,8 +22,8 @@ import scala.collection.mutable
 import org.apache.spark.connect.proto
 
 /**
- * Saves the contents of a [[DataFrame]] to external storage systems (e.g. file systems,
- * key-value stores, tables). Use `Dataset.write` to access this.
+ * Saves the contents of a [[DataFrame]] to external storage systems (e.g. file systems, key-value
+ * stores, tables). Use `Dataset.write` to access this.
  *
  * Mirrors the public surface of `org.apache.spark.sql.DataFrameWriter` over the Spark Connect
  * protocol.
@@ -49,7 +49,8 @@ class DataFrameWriter private[sql] (ds: Dataset) {
    * Specifies the behavior when data or table already exists. One of `"append"`, `"overwrite"`,
    * `"ignore"`, `"error"` / `"errorifexists"` (the default), or `"default"`.
    *
-   * @return this writer, for chaining.
+   * @return
+   *   this writer, for chaining.
    */
   def mode(saveMode: String): DataFrameWriter = {
     this.saveMode = saveMode.toLowerCase match {
@@ -61,7 +62,8 @@ class DataFrameWriter private[sql] (ds: Dataset) {
       case other =>
         throw new IllegalArgumentException(
           s"Unknown save mode: $other. Accepted save modes are 'overwrite', 'append', " +
-            "'ignore', 'error', 'errorifexists', 'default'.")
+            "'ignore', 'error', 'errorifexists', 'default'."
+        )
     }
     this
   }
@@ -69,7 +71,8 @@ class DataFrameWriter private[sql] (ds: Dataset) {
   /**
    * Specifies the output data source format (e.g. `"csv"`, `"json"`, `"parquet"`, `"orc"`).
    *
-   * @return this writer, for chaining.
+   * @return
+   *   this writer, for chaining.
    */
   def format(source: String): DataFrameWriter = {
     this.source = Option(source)
@@ -79,7 +82,8 @@ class DataFrameWriter private[sql] (ds: Dataset) {
   /**
    * Adds an output option for the underlying data source.
    *
-   * @return this writer, for chaining.
+   * @return
+   *   this writer, for chaining.
    */
   def option(key: String, value: String): DataFrameWriter = {
     extraOptions += (key -> value)
@@ -98,7 +102,8 @@ class DataFrameWriter private[sql] (ds: Dataset) {
   /**
    * Adds multiple output options.
    *
-   * @return this writer, for chaining.
+   * @return
+   *   this writer, for chaining.
    */
   def options(options: Map[String, String]): DataFrameWriter = {
     extraOptions ++= options
@@ -108,7 +113,8 @@ class DataFrameWriter private[sql] (ds: Dataset) {
   /**
    * Partitions the output by the given columns on the file system.
    *
-   * @return this writer, for chaining.
+   * @return
+   *   this writer, for chaining.
    */
   def partitionBy(colNames: String*): DataFrameWriter = {
     this.partitioningColumns = colNames
@@ -119,7 +125,8 @@ class DataFrameWriter private[sql] (ds: Dataset) {
    * Buckets the output by the given columns into `numBuckets` buckets. If specified, the output is
    * laid out on the file system similar to Hive's bucketing scheme.
    *
-   * @return this writer, for chaining.
+   * @return
+   *   this writer, for chaining.
    */
   def bucketBy(numBuckets: Int, colName: String, colNames: String*): DataFrameWriter = {
     this.numBuckets = Option(numBuckets)
@@ -130,7 +137,8 @@ class DataFrameWriter private[sql] (ds: Dataset) {
   /**
    * Sorts the output in each bucket by the given columns.
    *
-   * @return this writer, for chaining.
+   * @return
+   *   this writer, for chaining.
    */
   def sortBy(colName: String, colNames: String*): DataFrameWriter = {
     this.sortColumnNames = colName +: colNames
@@ -151,8 +159,8 @@ class DataFrameWriter private[sql] (ds: Dataset) {
   def saveAsTable(tableName: String): Unit = {
     val table = proto.WriteOperation.SaveTable(
       tableName = tableName,
-      saveMethod =
-        proto.WriteOperation.SaveTable.TableSaveMethod.TABLE_SAVE_METHOD_SAVE_AS_TABLE)
+      saveMethod = proto.WriteOperation.SaveTable.TableSaveMethod.TABLE_SAVE_METHOD_SAVE_AS_TABLE
+    )
     executeWriteOperation(_.copy(saveType = proto.WriteOperation.SaveType.Table(table)))
   }
 
@@ -160,8 +168,8 @@ class DataFrameWriter private[sql] (ds: Dataset) {
   def insertInto(tableName: String): Unit = {
     val table = proto.WriteOperation.SaveTable(
       tableName = tableName,
-      saveMethod =
-        proto.WriteOperation.SaveTable.TableSaveMethod.TABLE_SAVE_METHOD_INSERT_INTO)
+      saveMethod = proto.WriteOperation.SaveTable.TableSaveMethod.TABLE_SAVE_METHOD_INSERT_INTO
+    )
     executeWriteOperation(_.copy(saveType = proto.WriteOperation.SaveType.Table(table)))
   }
 
@@ -180,8 +188,7 @@ class DataFrameWriter private[sql] (ds: Dataset) {
   /** Saves the content as text at the given path. */
   def text(path: String): Unit = format("text").save(path)
 
-  private def executeWriteOperation(
-      f: proto.WriteOperation => proto.WriteOperation): Unit = {
+  private def executeWriteOperation(f: proto.WriteOperation => proto.WriteOperation): Unit = {
     val bucketBy = numBuckets.map { n =>
       proto.WriteOperation.BucketBy(bucketColumnNames = bucketColumnNames, numBuckets = n)
     }
@@ -192,9 +199,11 @@ class DataFrameWriter private[sql] (ds: Dataset) {
       sortColumnNames = sortColumnNames,
       partitioningColumns = partitioningColumns,
       bucketBy = bucketBy,
-      options = extraOptions.toMap)
+      options = extraOptions.toMap
+    )
     val writeOp = f(base)
     ds.sparkSession.executeCommand(
-      proto.Command(commandType = proto.Command.CommandType.WriteOperation(writeOp)))
+      proto.Command(commandType = proto.Command.CommandType.WriteOperation(writeOp))
+    )
   }
 }

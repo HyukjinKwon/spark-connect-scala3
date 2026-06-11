@@ -33,8 +33,6 @@ object Smoke {
 
       println("== sql ==")
       spark.sql("select 1 as a, 'hello' as b").show()
-    } finally {
-      spark.stop()
-    }
+    } finally spark.stop()
   }
 }

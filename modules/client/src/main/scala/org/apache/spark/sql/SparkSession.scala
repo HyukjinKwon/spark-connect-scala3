@@ -44,8 +44,7 @@ import org.apache.spark.sql.types.StructType
  * uniquely identifiable to the server), an Arrow allocator for decoding results, and the
  * [[RuntimeConfig]] facade.
  */
-class SparkSession private[sql] (
-    private[sql] val client: SparkConnectClient)
+class SparkSession private[sql] (private[sql] val client: SparkConnectClient)
     extends AutoCloseable {
 
   private[sql] val allocator: BufferAllocator = new RootAllocator()
@@ -64,7 +63,8 @@ class SparkSession private[sql] (
   private[sql] def newRelation(relType: proto.Relation.RelType): proto.Relation =
     proto.Relation(
       common = Some(proto.RelationCommon(planId = Some(nextPlanId()))),
-      relType = relType)
+      relType = relType
+    )
 
   private[sql] def newDataFrame(relType: proto.Relation.RelType): DataFrame =
     new Dataset(this, newRelation(relType))
@@ -95,11 +95,9 @@ class SparkSession private[sql] (
   private def range(start: Long, end: Long, step: Long, numPartitions: Option[Int]): DataFrame =
     newDataFrame(
       proto.Relation.RelType.Range(
-        proto.Range(
-          start = Some(start),
-          end = end,
-          step = step,
-          numPartitions = numPartitions)))
+        proto.Range(start = Some(start), end = end, step = step, numPartitions = numPartitions)
+      )
+    )
 
   /** Executes a SQL query and returns a lazy [[DataFrame]] over its result. */
   def sql(query: String): DataFrame =
@@ -109,7 +107,9 @@ class SparkSession private[sql] (
   def sql(query: String, args: Array[Any]): DataFrame =
     newDataFrame(
       proto.Relation.RelType.Sql(
-        proto.SQL(query = query, posArguments = args.toSeq.map(a => Column.lit(a).expr))))
+        proto.SQL(query = query, posArguments = args.toSeq.map(a => Column.lit(a).expr))
+      )
+    )
 
   /** Executes a SQL query with named parameters bound into the query. */
   def sql(query: String, args: Map[String, Any]): DataFrame =
@@ -117,12 +117,16 @@ class SparkSession private[sql] (
       proto.Relation.RelType.Sql(
         proto.SQL(
           query = query,
-          namedArguments = args.map { case (k, v) => k -> Column.lit(v).expr })))
+          namedArguments = args.map { case (k, v) => k -> Column.lit(v).expr }
+        )
+      )
+    )
 
   /** Returns a [[DataFrame]] with no rows or columns. */
   def emptyDataFrame: DataFrame =
     newDataFrame(
-      proto.Relation.RelType.LocalRelation(proto.LocalRelation(schema = Some("struct<>"))))
+      proto.Relation.RelType.LocalRelation(proto.LocalRelation(schema = Some("struct<>")))
+    )
 
   /** Creates a [[DataFrame]] from a local sequence of [[Row]]s using the given schema. */
   def createDataFrame(rows: Seq[Row], schema: StructType): DataFrame = {
@@ -131,7 +135,9 @@ class SparkSession private[sql] (
     val ddl = schema.simpleString.stripPrefix("struct<").stripSuffix(">")
     newDataFrame(
       proto.Relation.RelType.LocalRelation(
-        proto.LocalRelation(data = Some(ByteString.copyFrom(bytes)), schema = Some(ddl))))
+        proto.LocalRelation(data = Some(ByteString.copyFrom(bytes)), schema = Some(ddl))
+      )
+    )
   }
 
   /** Creates a [[DataFrame]] from a Java list of [[Row]]s using the given schema. */
@@ -165,13 +171,14 @@ class SparkSession private[sql] (
   def newSession(): SparkSession = new SparkSession(client.copy())
 
   /**
-   * Creates a new Spark Declarative Pipeline (a dataflow graph) in this session.
-   * Available on Spark 4.1 and later servers.
+   * Creates a new Spark Declarative Pipeline (a dataflow graph) in this session. Available on Spark
+   * 4.1 and later servers.
    */
   def pipeline(
       defaultCatalog: Option[String] = None,
       defaultDatabase: Option[String] = None,
-      sqlConf: Map[String, String] = Map.empty): pipelines.Pipeline =
+      sqlConf: Map[String, String] = Map.empty
+  ): pipelines.Pipeline =
     pipelines.Pipeline.create(this, defaultCatalog, defaultDatabase, sqlConf)
 
   /** Make this the active session for the current thread. */
@@ -245,7 +252,7 @@ object SparkSession {
       if (options.nonEmpty) {
         options.foreach { case (k, v) => session.conf.set(k, v) }
       }
-      synchronized { if (defaultSession.isEmpty) defaultSession = Some(session) }
+      synchronized(if (defaultSession.isEmpty) defaultSession = Some(session))
       session
     }
   }

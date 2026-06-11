@@ -20,7 +20,8 @@ object WordCount {
     try {
       val lines = spark.sql(
         "SELECT * FROM VALUES " +
-          "('the quick brown fox'), ('the lazy dog'), ('the quick dog') AS t(line)")
+          "('the quick brown fox'), ('the lazy dog'), ('the quick dog') AS t(line)"
+      )
 
       val counts = lines
         .select(explode(split(col("line"), " ")).as("word"))
@@ -39,8 +40,6 @@ object WordCount {
       // |  fox|    1|
       // | lazy|    1|
       // +-----+-----+
-    } finally {
-      spark.stop()
-    }
+    } finally spark.stop()
   }
 }

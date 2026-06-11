@@ -32,7 +32,7 @@ import org.apache.arrow.vector.util.Text
 import org.apache.spark.connect.proto
 import org.apache.spark.sql.{GenericRowWithSchema, Row}
 import org.apache.spark.sql.connect.common.DataTypeProtoConverter
-import org.apache.spark.sql.types.{StructType, StructField, StringType}
+import org.apache.spark.sql.types.{StringType, StructField, StructType}
 
 /**
  * Materializes the streaming `ExecutePlanResponse`s of a query into a sequence of [[Row]]s by
@@ -41,7 +41,8 @@ import org.apache.spark.sql.types.{StructType, StructField, StringType}
  */
 private[sql] class SparkResult(
     responses: Iterator[proto.ExecutePlanResponse],
-    allocator: BufferAllocator) {
+    allocator: BufferAllocator
+) {
 
   private var _schema: StructType = null
   private val rows = mutable.ArrayBuffer.empty[Row]
@@ -64,7 +65,8 @@ private[sql] class SparkResult(
         org.apache.spark.sql.Observation.lookup(om.name).foreach { obs =>
           obs.setMetricsFromLiterals(
             om.values.map(org.apache.spark.sql.Observation.decodeLiteral),
-            om.keys)
+            om.keys
+          )
         }
       }
     }
@@ -94,9 +96,7 @@ private[sql] class SparkResult(
           r += 1
         }
       }
-    } finally {
-      reader.close()
-    }
+    } finally reader.close()
   }
 
   def schema: StructType = {

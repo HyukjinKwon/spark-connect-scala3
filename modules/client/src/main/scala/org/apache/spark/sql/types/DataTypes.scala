@@ -20,9 +20,9 @@ package org.apache.spark.sql.types
 /**
  * The base type of all Spark SQL data types.
  *
- * This mirrors `org.apache.spark.sql.types.DataType` from Apache Spark closely enough that
- * schemas returned by a Spark Connect server can be represented faithfully on a pure Scala 3
- * client without depending on `spark-catalyst`.
+ * This mirrors `org.apache.spark.sql.types.DataType` from Apache Spark closely enough that schemas
+ * returned by a Spark Connect server can be represented faithfully on a pure Scala 3 client without
+ * depending on `spark-catalyst`.
  */
 abstract class DataType extends Serializable {
 
@@ -202,13 +202,16 @@ case class StructField(
     name: String,
     dataType: DataType,
     nullable: Boolean = true,
-    metadata: Metadata = Metadata.empty) {
+    metadata: Metadata = Metadata.empty
+) {
 
   def simpleString: String = s"$name:${dataType.simpleString}"
 
   /** Returns a copy with the given comment stored in the field's metadata. */
   def withComment(comment: String): StructField =
-    copy(metadata = new MetadataBuilder().withMetadata(metadata).putString("comment", comment).build())
+    copy(metadata =
+      new MetadataBuilder().withMetadata(metadata).putString("comment", comment).build()
+    )
 
   def getComment: Option[String] =
     if (metadata.contains("comment")) Some(metadata.getString("comment")) else None
@@ -228,8 +231,9 @@ case class StructType(fields: Array[StructField]) extends DataType with Iterable
   def length: Int = fields.length
 
   def apply(name: String): StructField =
-    fields.find(_.name == name).getOrElse(
-      throw new IllegalArgumentException(s"Field \"$name\" does not exist."))
+    fields
+      .find(_.name == name)
+      .getOrElse(throw new IllegalArgumentException(s"Field \"$name\" does not exist."))
 
   def apply(index: Int): StructField = fields(index)
 
@@ -257,7 +261,8 @@ case class StructType(fields: Array[StructField]) extends DataType with Iterable
     builder.append("root\n")
     def appendField(field: StructField, prefix: String): Unit = {
       builder.append(
-        s"$prefix-- ${field.name}: ${field.dataType.typeName} (nullable = ${field.nullable})\n")
+        s"$prefix-- ${field.name}: ${field.dataType.typeName} (nullable = ${field.nullable})\n"
+      )
       field.dataType match {
         case s: StructType => s.fields.foreach(appendField(_, prefix + "    |"))
         case ArrayType(s: StructType, _) => s.fields.foreach(appendField(_, prefix + "    |"))

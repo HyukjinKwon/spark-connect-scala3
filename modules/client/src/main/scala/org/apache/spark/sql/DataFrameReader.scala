@@ -45,7 +45,8 @@ class DataFrameReader private[sql] (sparkSession: SparkSession) {
   /**
    * Specifies the input data source format (e.g. `"csv"`, `"json"`, `"parquet"`, `"orc"`).
    *
-   * @return this reader, for chaining.
+   * @return
+   *   this reader, for chaining.
    */
   def format(source: String): DataFrameReader = {
     this.source = Option(source)
@@ -53,10 +54,10 @@ class DataFrameReader private[sql] (sparkSession: SparkSession) {
   }
 
   /**
-   * Specifies the input schema using a DDL-formatted string (e.g.
-   * `"a INT, b STRING"`).
+   * Specifies the input schema using a DDL-formatted string (e.g. `"a INT, b STRING"`).
    *
-   * @return this reader, for chaining.
+   * @return
+   *   this reader, for chaining.
    */
   def schema(schemaString: String): DataFrameReader = {
     this.userSchema = Option(schemaString)
@@ -66,7 +67,8 @@ class DataFrameReader private[sql] (sparkSession: SparkSession) {
   /**
    * Specifies the input schema using a [[StructType]].
    *
-   * @return this reader, for chaining.
+   * @return
+   *   this reader, for chaining.
    */
   def schema(schema: StructType): DataFrameReader = {
     this.userSchema = Option(schema.simpleString)
@@ -76,7 +78,8 @@ class DataFrameReader private[sql] (sparkSession: SparkSession) {
   /**
    * Adds an input option for the underlying data source.
    *
-   * @return this reader, for chaining.
+   * @return
+   *   this reader, for chaining.
    */
   def option(key: String, value: String): DataFrameReader = {
     extraOptions += (key -> value)
@@ -95,7 +98,8 @@ class DataFrameReader private[sql] (sparkSession: SparkSession) {
   /**
    * Adds multiple input options.
    *
-   * @return this reader, for chaining.
+   * @return
+   *   this reader, for chaining.
    */
   def options(options: Map[String, String]): DataFrameReader = {
     extraOptions ++= options
@@ -120,20 +124,20 @@ class DataFrameReader private[sql] (sparkSession: SparkSession) {
       format = source,
       schema = userSchema,
       options = extraOptions.toMap,
-      paths = paths)
+      paths = paths
+    )
     sparkSession.newDataFrame(
-      proto.Relation.RelType.Read(
-        proto.Read(readType = proto.Read.ReadType.DataSource(dataSource))))
+      proto.Relation.RelType.Read(proto.Read(readType = proto.Read.ReadType.DataSource(dataSource)))
+    )
   }
 
   /** Returns the specified table/view as a [[DataFrame]]. */
   def table(tableName: String): DataFrame = {
-    val namedTable = proto.Read.NamedTable(
-      unparsedIdentifier = tableName,
-      options = extraOptions.toMap)
+    val namedTable =
+      proto.Read.NamedTable(unparsedIdentifier = tableName, options = extraOptions.toMap)
     sparkSession.newDataFrame(
-      proto.Relation.RelType.Read(
-        proto.Read(readType = proto.Read.ReadType.NamedTable(namedTable))))
+      proto.Relation.RelType.Read(proto.Read(readType = proto.Read.ReadType.NamedTable(namedTable)))
+    )
   }
 
   /** Loads CSV file(s) and returns the result as a [[DataFrame]]. */
