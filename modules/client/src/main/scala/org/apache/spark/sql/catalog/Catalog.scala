@@ -19,6 +19,8 @@ package org.apache.spark.sql.catalog
 
 import org.apache.spark.connect.proto
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.connect.common.DataTypeProtoConverter
+import org.apache.spark.sql.types.StructType
 
 /**
  * The catalog interface for inspecting and managing databases, tables, functions, and the query
@@ -67,6 +69,10 @@ class Catalog private[sql] (sparkSession: SparkSession) {
   def databaseExists(dbName: String): Boolean =
     scalarBoolean(proto.Catalog.CatType.DatabaseExists(proto.DatabaseExists(dbName = dbName)))
 
+  /** Gets the database with the given name as a [[Database]]. */
+  def getDatabase(dbName: String): Database =
+    toDatabase(single(proto.Catalog.CatType.GetDatabase(proto.GetDatabase(dbName = dbName))))
+
   // -- Tables ----------------------------------------------------------------
 
   /** Returns a [[DataFrame]] of tables (and views) in the current database. */
@@ -86,6 +92,84 @@ class Catalog private[sql] (sparkSession: SparkSession) {
     scalarBoolean(
       proto.Catalog.CatType.TableExists(
         proto.TableExists(tableName = tableName, dbName = Some(dbName))
+      )
+    )
+
+  /** Gets the table or view with the given name as a [[Table]]. */
+  def getTable(tableName: String): Table =
+    toTable(single(proto.Catalog.CatType.GetTable(proto.GetTable(tableName = tableName))))
+
+  /** Gets the table or view of the given name in the given database as a [[Table]]. */
+  def getTable(dbName: String, tableName: String): Table =
+    toTable(
+      single(
+        proto.Catalog.CatType.GetTable(
+          proto.GetTable(tableName = tableName, dbName = Some(dbName))
+        )
+      )
+    )
+
+  /**
+   * Creates a table from the given path (using the default data source) and returns the
+   * corresponding [[DataFrame]].
+   */
+  def createTable(tableName: String, path: String): DataFrame =
+    catalogDataFrame(
+      proto.Catalog.CatType.CreateTable(
+        proto.CreateTable(tableName = tableName, path = Some(path))
+      )
+    )
+
+  /**
+   * Creates a table from the given source and options, returning the corresponding [[DataFrame]].
+   */
+  def createTable(tableName: String, source: String, options: Map[String, String]): DataFrame =
+    catalogDataFrame(
+      proto.Catalog.CatType.CreateTable(
+        proto.CreateTable(tableName = tableName, source = Some(source), options = options)
+      )
+    )
+
+  /**
+   * Creates a table from the given source, schema and options, returning the corresponding
+   * [[DataFrame]].
+   */
+  def createTable(
+      tableName: String,
+      source: String,
+      schema: StructType,
+      options: Map[String, String]
+  ): DataFrame =
+    catalogDataFrame(
+      proto.Catalog.CatType.CreateTable(
+        proto.CreateTable(
+          tableName = tableName,
+          source = Some(source),
+          schema = Some(DataTypeProtoConverter.toConnectProtoType(schema)),
+          options = options
+        )
+      )
+    )
+
+  /** Creates a table from the given path and returns the corresponding [[DataFrame]]. */
+  def createExternalTable(tableName: String, path: String): DataFrame =
+    catalogDataFrame(
+      proto.Catalog.CatType.CreateExternalTable(
+        proto.CreateExternalTable(tableName = tableName, path = Some(path))
+      )
+    )
+
+  /**
+   * Creates a table from the given source and options, returning the corresponding [[DataFrame]].
+   */
+  def createExternalTable(
+      tableName: String,
+      source: String,
+      options: Map[String, String]
+  ): DataFrame =
+    catalogDataFrame(
+      proto.Catalog.CatType.CreateExternalTable(
+        proto.CreateExternalTable(tableName = tableName, source = Some(source), options = options)
       )
     )
 
@@ -113,6 +197,22 @@ class Catalog private[sql] (sparkSession: SparkSession) {
   def functionExists(functionName: String): Boolean =
     scalarBoolean(
       proto.Catalog.CatType.FunctionExists(proto.FunctionExists(functionName = functionName))
+    )
+
+  /** Gets the function with the given name as a [[Function]]. */
+  def getFunction(functionName: String): Function =
+    toFunction(
+      single(proto.Catalog.CatType.GetFunction(proto.GetFunction(functionName = functionName)))
+    )
+
+  /** Gets the function of the given name in the given database as a [[Function]]. */
+  def getFunction(dbName: String, functionName: String): Function =
+    toFunction(
+      single(
+        proto.Catalog.CatType.GetFunction(
+          proto.GetFunction(functionName = functionName, dbName = Some(dbName))
+        )
+      )
     )
 
   // -- Views -----------------------------------------------------------------
@@ -175,6 +275,60 @@ class Catalog private[sql] (sparkSession: SparkSession) {
 
   private def scalarBoolean(catType: proto.Catalog.CatType): Boolean =
     rows(catType).head.getBoolean(0)
+
+  private def single(catType: proto.Catalog.CatType): Row = rows(catType).head
+
+  private def hasField(r: Row, name: String): Boolean =
+    r.schema != null && r.schema.fieldNames.contains(name)
+
+  private def optStr(r: Row, name: String): String =
+    if (hasField(r, name) && !r.isNullAt(r.fieldIndex(name))) r.getString(r.fieldIndex(name))
+    else null
+
+  private def optBool(r: Row, name: String): Boolean =
+    hasField(r, name) && !r.isNullAt(r.fieldIndex(name)) && r.getBoolean(r.fieldIndex(name))
+
+  private def namespaceOf(r: Row): Array[String] = {
+    def asArr(v: Any): Array[String] = v match {
+      case null => Array.empty[String]
+      case a: Array[?] => a.map(String.valueOf)
+      case s: scala.collection.Seq[?] => s.map(String.valueOf).toArray
+      case other => Array(String.valueOf(other))
+    }
+    if (hasField(r, "namespace") && !r.isNullAt(r.fieldIndex("namespace")))
+      asArr(r.get(r.fieldIndex("namespace")))
+    else if (hasField(r, "database") && !r.isNullAt(r.fieldIndex("database")))
+      Array(r.getString(r.fieldIndex("database")))
+    else Array.empty[String]
+  }
+
+  private def toDatabase(r: Row): Database =
+    Database(
+      optStr(r, "name"),
+      optStr(r, "catalog"),
+      optStr(r, "description"),
+      optStr(r, "locationUri")
+    )
+
+  private def toTable(r: Row): Table =
+    Table(
+      optStr(r, "name"),
+      optStr(r, "catalog"),
+      namespaceOf(r),
+      optStr(r, "description"),
+      optStr(r, "tableType"),
+      optBool(r, "isTemporary")
+    )
+
+  private def toFunction(r: Row): Function =
+    Function(
+      optStr(r, "name"),
+      optStr(r, "catalog"),
+      namespaceOf(r),
+      optStr(r, "description"),
+      optStr(r, "className"),
+      optBool(r, "isTemporary")
+    )
 
   private def run(catType: proto.Catalog.CatType): Unit = {
     rows(catType)

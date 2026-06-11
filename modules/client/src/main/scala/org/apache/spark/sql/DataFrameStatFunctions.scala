@@ -17,7 +17,10 @@
 
 package org.apache.spark.sql
 
+import java.io.ByteArrayInputStream
+
 import org.apache.spark.connect.proto
+import org.apache.spark.util.sketch.{BloomFilter, CountMinSketch}
 
 /**
  * Statistical functions for a [[Dataset]], reached via `df.stat`. Mirrors PySpark's
@@ -185,4 +188,54 @@ class DataFrameStatFunctions private[sql] (df: Dataset) {
       )
     )
   }
+
+  // -- Probabilistic sketches ------------------------------------------------
+
+  /**
+   * Builds a Count-Min Sketch over the given column with the given relative error (`eps`),
+   * `confidence` and random `seed`. The sketch is computed by a server-side aggregate and
+   * deserialized on the client.
+   */
+  def countMinSketch(colName: String, eps: Double, confidence: Double, seed: Int): CountMinSketch =
+    countMinSketch(Column.fromName(colName), eps, confidence, seed)
+
+  /** Builds a Count-Min Sketch over the given column. */
+  def countMinSketch(col: Column, eps: Double, confidence: Double, seed: Int): CountMinSketch = {
+    val agg =
+      Column.fn("count_min_sketch", col, Column.lit(eps), Column.lit(confidence), Column.lit(seed))
+    CountMinSketch.readFrom(new ByteArrayInputStream(aggBytes(agg)))
+  }
+
+  /**
+   * Builds a Bloom filter over the given column, sized for `expectedNumItems` items with a target
+   * false-positive probability `fpp`.
+   */
+  def bloomFilter(colName: String, expectedNumItems: Long, fpp: Double): BloomFilter =
+    bloomFilter(Column.fromName(colName), expectedNumItems, fpp)
+
+  /** Builds a Bloom filter over the given column for `expectedNumItems` and target `fpp`. */
+  def bloomFilter(col: Column, expectedNumItems: Long, fpp: Double): BloomFilter =
+    bloomFilterWithNumBits(
+      col,
+      expectedNumItems,
+      BloomFilter.optimalNumOfBits(expectedNumItems, fpp)
+    )
+
+  /** Builds a Bloom filter over the given column with an explicit number of bits. */
+  def bloomFilter(colName: String, expectedNumItems: Long, numBits: Long): BloomFilter =
+    bloomFilterWithNumBits(Column.fromName(colName), expectedNumItems, numBits)
+
+  private def bloomFilterWithNumBits(
+      col: Column,
+      expectedNumItems: Long,
+      numBits: Long
+  ): BloomFilter = {
+    val agg =
+      Column.fn("bloom_filter_agg", col, Column.lit(expectedNumItems), Column.lit(numBits))
+    BloomFilter.readFrom(new ByteArrayInputStream(aggBytes(agg)))
+  }
+
+  /** Runs a single-column binary aggregate and returns the resulting bytes. */
+  private def aggBytes(agg: Column): Array[Byte] =
+    df.select(agg).collect().head.getAs[Array[Byte]](0)
 }
