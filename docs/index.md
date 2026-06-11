@@ -43,9 +43,22 @@ This project is that client for Scala 3.
 
 ## What it supports
 
-`spark-connect-scala3` implements the Spark Connect DataFrame, SQL, Structured Streaming, and Declarative Pipelines API -- everything except user-defined functions (UDFs) and the `foreach`/`foreachBatch` streaming sinks, whose Spark Connect protobuf definitions are not yet finalized. (The separate, experimental MLlib-over-Connect surface is also out of scope.)
+`spark-connect-scala3` implements the Spark Connect DataFrame, SQL, Structured Streaming, and Declarative Pipelines API, modeled directly on Apache Spark's Scala API (`SparkSession`, `DataFrame`, `Column`, `functions`, `Dataset[T]`, ...), so existing Spark Scala code ports almost verbatim. Results decode through Apache Arrow into ordered, name-addressable `Row`s.
 
-Results decode through Apache Arrow into ordered, name-addressable `Row`s. Class and method names match Apache Spark's Scala API (`SparkSession`, `DataFrame`, `Column`, `functions`, ...), so existing Spark Scala code ports almost verbatim.
+It also supports typed Datasets: `df.as[T]` and `spark.createDataset(values)` for case classes, tuples, primitives, `Option`, collections, and maps. Encoders run entirely on the client, so no closure is sent to the server.
+
+### Not supported
+
+The following all require running a user-provided JVM closure on the server (the same mechanism as a UDF), which Spark Connect for Scala 3 does not provide:
+
+- **User-defined functions**: `functions.udf`, `spark.udf.register`, and typed `Aggregator` / UDAFs.
+- **Typed `Dataset` transformations whose argument is a Scala function**: `map`, `flatMap`, `mapPartitions`, `groupByKey` (and its `mapGroups` / `flatMapGroups` / `reduceGroups`), and `reduce`. Note that `as[T]` and `createDataset`, which only attach an encoder and ship no closure, *are* supported.
+- **Structured Streaming `foreach` / `foreachBatch`** sinks.
+
+Also out of scope because they are not part of the Spark Connect protocol at all:
+
+- The **RDD API** (`Dataset.rdd`, `SparkContext`, accumulators, broadcast variables).
+- The experimental **MLlib-over-Connect** surface.
 
 ## Project facts
 

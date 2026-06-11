@@ -29,7 +29,7 @@ import org.apache.spark.connect.proto
  *   df.writeTo("catalog.db.table").append()
  * }}}
  */
-final class DataFrameWriterV2 private[sql] (table: String, ds: Dataset) {
+final class DataFrameWriterV2 private[sql] (table: String, ds: Dataset[?]) {
 
   private var provider: Option[String] = None
   private val options = mutable.LinkedHashMap.empty[String, String]

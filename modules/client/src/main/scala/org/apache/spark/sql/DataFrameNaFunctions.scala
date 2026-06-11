@@ -30,7 +30,7 @@ import org.apache.spark.connect.proto
  *   df.na.replace("name", Map("UNKNOWN" -> "unnamed"))
  * }}}
  */
-class DataFrameNaFunctions private[sql] (df: Dataset) {
+class DataFrameNaFunctions private[sql] (df: Dataset[?]) {
 
   /** Returns a new [[Dataset]] that drops rows containing any null values. */
   def drop(): DataFrame = drop("any")

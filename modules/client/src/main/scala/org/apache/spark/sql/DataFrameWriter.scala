@@ -34,7 +34,7 @@ import org.apache.spark.connect.proto
  *   df.write.mode("append").saveAsTable("my_table")
  *   }}}
  */
-class DataFrameWriter private[sql] (ds: Dataset) {
+class DataFrameWriter private[sql] (ds: Dataset[?]) {
 
   private var source: Option[String] = None
   private var saveMode: proto.WriteOperation.SaveMode =

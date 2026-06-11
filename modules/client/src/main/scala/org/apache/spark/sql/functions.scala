@@ -701,5 +701,5 @@ object functions {
     Column.fn("map_zip_with", left, right, createLambda(3, cs => f(cs(0), cs(1), cs(2))))
 
   /** Marks a DataFrame as small enough for a broadcast join. */
-  def broadcast(df: Dataset): Dataset = df.hint("broadcast")
+  def broadcast(df: Dataset[?]): DataFrame = df.hint("broadcast")
 }

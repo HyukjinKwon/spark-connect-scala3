@@ -25,7 +25,7 @@ import org.apache.spark.connect.proto.Relation.RelType
  * [[Dataset.rollup]], [[Dataset.cube]], or [[Dataset.pivot]].
  */
 class RelationalGroupedDataset private[sql] (
-    df: Dataset,
+    df: Dataset[?],
     groupingExprs: Seq[Column],
     groupType: proto.Aggregate.GroupType,
     pivotCol: Option[Column] = None,

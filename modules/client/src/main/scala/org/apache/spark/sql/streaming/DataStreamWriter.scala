@@ -44,7 +44,7 @@ import org.apache.spark.sql.Dataset
  *   query.stop()
  *   }}}
  */
-class DataStreamWriter private[sql] (ds: Dataset) {
+class DataStreamWriter private[sql] (ds: Dataset[?]) {
 
   private var source: Option[String] = None
   private var mode: Option[String] = None

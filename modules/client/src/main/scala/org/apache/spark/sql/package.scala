@@ -23,5 +23,5 @@ package object sql {
    * A [[Dataset]] of [[Row]]s. Spark Connect for Scala 3 currently models all DataFrames as untyped
    * row datasets, mirroring `DataFrame = Dataset[Row]` in Apache Spark.
    */
-  type DataFrame = Dataset
+  type DataFrame = Dataset[Row]
 }

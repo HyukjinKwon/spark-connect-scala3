@@ -204,3 +204,38 @@ val row = spark.sql("SELECT 1 AS a, 'x' AS b").first()
 row.getInt(0)      // 1
 row.getString(1)   // "x"
 ```
+
+## Typed Datasets (`as[T]` and `createDataset`)
+
+A `DataFrame` is a `Dataset[Row]`. You can reinterpret it as a typed `Dataset[T]`
+with `as[T]`, or build one from local values with `spark.createDataset`. Encoders
+are derived at compile time for case classes, tuples, primitives, `Option`,
+collections, and maps. This is a purely client-side decoding step, so no closure is
+sent to the server.
+
+```scala
+import org.apache.spark.sql.SparkSession
+
+case class Person(id: Long, name: String)
+
+val spark = SparkSession.builder.remote("sc://localhost:15002").getOrCreate()
+
+// Reinterpret query results as a typed Dataset.
+val people: Array[Person] =
+  spark.sql("SELECT 1L AS id, 'alice' AS name").as[Person].collect()
+
+// Build a Dataset from local values and ship it to the server.
+val ds = spark.createDataset(Seq(Person(1L, "alice"), Person(2L, "bob")))
+ds.collect()      // Array[Person]
+ds.head()         // Person(1, alice)
+
+// Primitives and tuples work too.
+spark.range(5).as[Long].collect()                       // Array[Long]
+spark.sql("SELECT 1 AS a, 'x' AS b").as[(Int, String)]  // Dataset[(Int, String)]
+```
+
+Typed *actions* (`collect`, `head`, `first`, `take`, `toLocalIterator`,
+`collectAsList`) return `T`. Note that the typed transformations that take a Scala
+function -- `map`, `flatMap`, `mapPartitions`, `groupByKey`, `reduce` -- are not
+supported, because they run a closure on the server (the UDF mechanism). Chain the
+relational operators (`select`, `filter`, ...) and call `as[T]` at the end.

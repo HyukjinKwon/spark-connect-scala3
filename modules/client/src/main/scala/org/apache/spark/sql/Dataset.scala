@@ -31,15 +31,26 @@ import org.apache.spark.sql.types.StructType
  *
  * Mirrors the public surface of `org.apache.spark.sql.Dataset` over the Spark Connect protocol.
  */
-class Dataset private[sql] (
+class Dataset[T] private[sql] (
     val sparkSession: SparkSession,
-    private[sql] val relation: proto.Relation
+    private[sql] val relation: proto.Relation,
+    private[sql] val encoder: Encoder[T]
 ) {
 
   private[sql] def plan: proto.Plan = proto.Plan(proto.Plan.OpType.Root(relation))
 
   /** Builds a new DataFrame whose relation has `this` as input. */
   private def withInput(relType: RelType): DataFrame = sparkSession.newDataFrame(relType)
+
+  /** Builds a new Dataset of the same element type `T` from a relation built on this input. */
+  private def withSameType(relType: RelType): Dataset[T] =
+    new Dataset(sparkSession, sparkSession.newRelation(relType), encoder)
+
+  /**
+   * Returns a new Dataset where each record is mapped to type `U` via its [[Encoder]]. This is a
+   * purely client-side reinterpretation (no server-side closure), so it works over Spark Connect.
+   */
+  def as[U](using enc: Encoder[U]): Dataset[U] = new Dataset(sparkSession, relation, enc)
 
   // -- Schema ----------------------------------------------------------------
 
@@ -159,7 +170,7 @@ class Dataset private[sql] (
   def drop(col: Column): DataFrame =
     withInput(RelType.Drop(proto.Drop(input = Some(relation), columns = Seq(col.expr))))
 
-  def toDF(): DataFrame = this
+  def toDF(): DataFrame = new Dataset(sparkSession, relation, Encoder.rowEncoder)
   def toDF(colNames: String*): DataFrame =
     withInput(RelType.ToDf(proto.ToDF(input = Some(relation), columnNames = colNames)))
 
@@ -223,10 +234,10 @@ class Dataset private[sql] (
 
   // -- Set operations --------------------------------------------------------
 
-  def union(other: Dataset): DataFrame = setOp(other, union = true, isAll = true)
-  def unionAll(other: Dataset): DataFrame = union(other)
-  def unionByName(other: Dataset): DataFrame = unionByName(other, allowMissingColumns = false)
-  def unionByName(other: Dataset, allowMissingColumns: Boolean): DataFrame =
+  def union(other: Dataset[?]): DataFrame = setOp(other, union = true, isAll = true)
+  def unionAll(other: Dataset[?]): DataFrame = union(other)
+  def unionByName(other: Dataset[?]): DataFrame = unionByName(other, allowMissingColumns = false)
+  def unionByName(other: Dataset[?], allowMissingColumns: Boolean): DataFrame =
     withInput(
       RelType.SetOp(
         proto.SetOperation(
@@ -240,20 +251,20 @@ class Dataset private[sql] (
       )
     )
 
-  def intersect(other: Dataset): DataFrame =
+  def intersect(other: Dataset[?]): DataFrame =
     setOpTyped(other, proto.SetOperation.SetOpType.SET_OP_TYPE_INTERSECT, isAll = false)
-  def intersectAll(other: Dataset): DataFrame =
+  def intersectAll(other: Dataset[?]): DataFrame =
     setOpTyped(other, proto.SetOperation.SetOpType.SET_OP_TYPE_INTERSECT, isAll = true)
-  def except(other: Dataset): DataFrame =
+  def except(other: Dataset[?]): DataFrame =
     setOpTyped(other, proto.SetOperation.SetOpType.SET_OP_TYPE_EXCEPT, isAll = false)
-  def exceptAll(other: Dataset): DataFrame =
+  def exceptAll(other: Dataset[?]): DataFrame =
     setOpTyped(other, proto.SetOperation.SetOpType.SET_OP_TYPE_EXCEPT, isAll = true)
 
-  private def setOp(other: Dataset, union: Boolean, isAll: Boolean): DataFrame =
+  private def setOp(other: Dataset[?], union: Boolean, isAll: Boolean): DataFrame =
     setOpTyped(other, proto.SetOperation.SetOpType.SET_OP_TYPE_UNION, isAll)
 
   private def setOpTyped(
-      other: Dataset,
+      other: Dataset[?],
       opType: proto.SetOperation.SetOpType,
       isAll: Boolean
   ): DataFrame =
@@ -270,21 +281,21 @@ class Dataset private[sql] (
 
   // -- Joins -----------------------------------------------------------------
 
-  def join(right: Dataset): DataFrame = buildJoin(right, None, Nil, "inner")
-  def join(right: Dataset, usingColumn: String): DataFrame =
+  def join(right: Dataset[?]): DataFrame = buildJoin(right, None, Nil, "inner")
+  def join(right: Dataset[?], usingColumn: String): DataFrame =
     buildJoin(right, None, Seq(usingColumn), "inner")
-  def join(right: Dataset, usingColumns: Seq[String]): DataFrame =
+  def join(right: Dataset[?], usingColumns: Seq[String]): DataFrame =
     buildJoin(right, None, usingColumns, "inner")
-  def join(right: Dataset, usingColumns: Seq[String], joinType: String): DataFrame =
+  def join(right: Dataset[?], usingColumns: Seq[String], joinType: String): DataFrame =
     buildJoin(right, None, usingColumns, joinType)
-  def join(right: Dataset, joinExprs: Column): DataFrame =
+  def join(right: Dataset[?], joinExprs: Column): DataFrame =
     buildJoin(right, Some(joinExprs), Nil, "inner")
-  def join(right: Dataset, joinExprs: Column, joinType: String): DataFrame =
+  def join(right: Dataset[?], joinExprs: Column, joinType: String): DataFrame =
     buildJoin(right, Some(joinExprs), Nil, joinType)
-  def crossJoin(right: Dataset): DataFrame = buildJoin(right, None, Nil, "cross")
+  def crossJoin(right: Dataset[?]): DataFrame = buildJoin(right, None, Nil, "cross")
 
   private def buildJoin(
-      right: Dataset,
+      right: Dataset[?],
       joinExprs: Option[Column],
       usingColumns: Seq[String],
       joinType: String
@@ -382,9 +393,11 @@ class Dataset private[sql] (
 
   // -- Actions ---------------------------------------------------------------
 
-  def collect(): Array[Row] = sparkSession.execute(plan).toArray
-  def collectAsList(): java.util.List[Row] = collect().toList.asJava
-  def toLocalIterator(): java.util.Iterator[Row] = sparkSession.execute(plan).iterator.asJava
+  def collect(): Array[T] =
+    sparkSession.execute(plan).toArray.map(encoder.fromRow)(using encoder.classTag)
+  def collectAsList(): java.util.List[T] = collect().toList.asJava
+  def toLocalIterator(): java.util.Iterator[T] =
+    sparkSession.execute(plan).iterator.map(encoder.fromRow).asJava
 
   def count(): Long = {
     val agg = proto.Aggregate(
@@ -397,12 +410,23 @@ class Dataset private[sql] (
     if (rows.isEmpty) 0L else rows.head.getLong(0)
   }
 
-  def head(n: Int): Array[Row] = limit(n).collect()
-  def head(): Row = head(1).head
-  def first(): Row = head()
-  def take(n: Int): Array[Row] = head(n)
-  def takeAsList(n: Int): java.util.List[Row] = take(n).toList.asJava
-  def isEmpty: Boolean = limit(1).collect().isEmpty
+  def head(n: Int): Array[T] =
+    withSameType(RelType.Limit(proto.Limit(input = Some(relation), limit = n))).collect()
+  def head(): T = head(1).head
+  def first(): T = head()
+  def take(n: Int): Array[T] = head(n)
+  def takeAsList(n: Int): java.util.List[T] = take(n).toList.asJava
+  def isEmpty: Boolean =
+    sparkSession
+      .execute(
+        proto.Plan(
+          proto.Plan.OpType.Root(
+            sparkSession.newRelation(RelType.Limit(proto.Limit(input = Some(relation), limit = 1)))
+          )
+        )
+      )
+      .toArray
+      .isEmpty
 
   def show(): Unit = show(20)
   def show(numRows: Int): Unit = show(numRows, truncate = true)
@@ -494,11 +518,11 @@ class Dataset private[sql] (
     withInput(RelType.CollectMetrics(observation.markObserved(this, expr +: exprs)))
 
   /** Concisely applies a transformation to this Dataset. */
-  def transform(t: Dataset => Dataset): Dataset = t(this)
+  def transform[U](t: Dataset[T] => Dataset[U]): Dataset[U] = t(this)
 
   // -- Misc ------------------------------------------------------------------
 
-  def sameSemantics(other: Dataset): Boolean =
+  def sameSemantics(other: Dataset[?]): Boolean =
     sparkSession.client.sameSemantics(plan, other.plan)
   def semanticHash(): Int = sparkSession.client.semanticHash(plan)
 

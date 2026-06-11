@@ -70,7 +70,7 @@ class SparkSession private[sql] (private[sql] val client: SparkConnectClient)
     )
 
   private[sql] def newDataFrame(relType: proto.Relation.RelType): DataFrame =
-    new Dataset(this, newRelation(relType))
+    new Dataset(this, newRelation(relType), Encoder.rowEncoder)
 
   private[sql] def execute(plan: proto.Plan): SparkResult =
     new SparkResult(client.execute(plan), allocator)
@@ -147,6 +147,21 @@ class SparkSession private[sql] (private[sql] val client: SparkConnectClient)
   def createDataFrame(rows: java.util.List[Row], schema: StructType): DataFrame = {
     import scala.jdk.CollectionConverters._
     createDataFrame(rows.asScala.toSeq, schema)
+  }
+
+  /**
+   * Creates a typed [[Dataset]] from a local sequence of `T` using its [[Encoder]]. The data is
+   * serialized via the encoder and shipped as a local relation; no server-side closure is involved.
+   */
+  def createDataset[T](data: Seq[T])(using enc: Encoder[T]): Dataset[T] = {
+    val rows = data.map(enc.toRow)
+    createDataFrame(rows, enc.schema).as[T]
+  }
+
+  /** Creates a typed [[Dataset]] from a Java list of `T` using its [[Encoder]]. */
+  def createDataset[T](data: java.util.List[T])(using enc: Encoder[T]): Dataset[T] = {
+    import scala.jdk.CollectionConverters._
+    createDataset(data.asScala.toSeq)
   }
 
   // -- Reading / writing / catalog / streaming -------------------------------

@@ -29,7 +29,7 @@ import org.apache.spark.connect.proto
  *   df.stat.crosstab("a", "b").show()
  * }}}
  */
-class DataFrameStatFunctions private[sql] (df: Dataset) {
+class DataFrameStatFunctions private[sql] (df: Dataset[?]) {
 
   /**
    * Calculates the approximate quantiles of a numerical column.

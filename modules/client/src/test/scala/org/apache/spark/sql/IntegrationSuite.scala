@@ -21,6 +21,9 @@ import org.apache.spark.sql.expressions.Window
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 
+/** Top-level case class used by the typed-Dataset (`as[T]` / `createDataset`) tests. */
+case class ItPerson(id: Long, name: String)
+
 /**
  * End-to-end tests that run against a real Spark Connect server.
  *
@@ -204,6 +207,20 @@ class IntegrationSuite extends munit.FunSuite {
     assume(atLeastSpark(4, 1), "Declarative pipelines require Spark 4.1 or newer")
     val pipeline = spark.pipeline()
     assert(pipeline != null)
+  }
+
+  test("as[T] decodes rows into a case class") {
+    val people = spark.sql("select 1L as id, 'alice' as name").as[ItPerson].collect()
+    assertEquals(people.toSeq, Seq(ItPerson(1L, "alice")))
+  }
+
+  test("as[Long] decodes a single-column dataset") {
+    assertEquals(spark.range(4).as[Long].collect().toSeq, Seq(0L, 1L, 2L, 3L))
+  }
+
+  test("createDataset round-trips typed values") {
+    val ds = spark.createDataset(Seq(ItPerson(1L, "a"), ItPerson(2L, "b")))
+    assertEquals(ds.collect().toSeq, Seq(ItPerson(1L, "a"), ItPerson(2L, "b")))
   }
 
   /** True if the connected server is at least the given Spark major.minor version. */

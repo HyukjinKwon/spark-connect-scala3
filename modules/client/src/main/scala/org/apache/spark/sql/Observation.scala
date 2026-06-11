@@ -145,7 +145,7 @@ class Observation(val name: String) {
    * @return
    *   the fully built `proto.CollectMetrics` relation message.
    */
-  private[sql] def markObserved(ds: Dataset, exprs: Seq[Column]): proto.CollectMetrics =
+  private[sql] def markObserved(ds: Dataset[?], exprs: Seq[Column]): proto.CollectMetrics =
     lock.synchronized {
       if (Observation.lookup(name).isDefined) {
         throw new IllegalArgumentException("An Observation can be used with a Dataset only once")
