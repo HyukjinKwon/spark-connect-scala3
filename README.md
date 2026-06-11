@@ -91,24 +91,17 @@ On **Spark 3.5.x** the Connect server is not bundled. Use a Scala 2.13 distribut
 
 ## What it supports
 
-`spark-connect-scala3` implements the Spark Connect DataFrame, SQL, Structured Streaming, and Declarative Pipelines surface, modeled directly on Apache Spark's Scala API:
+`spark-connect-scala3` implements the Spark Connect DataFrame, SQL, Structured
+Streaming, and Declarative Pipelines API, modeled directly on Apache Spark's
+Scala API: everything except user-defined functions (UDFs) and the
+`foreach`/`foreachBatch` streaming sinks, which run user JVM code on the server
+that the Spark Connect protocol does not transport. (MLlib over Connect is also
+out of scope.)
 
-- **DataFrame operations**: `select`, `selectExpr`, `filter`/`where`, `withColumn`, `withColumnRenamed`, `drop`, `join` (inner/left/right/outer/semi/anti/cross), `groupBy`/`rollup`/`cube`/`agg`, `orderBy`/`sort`, `limit`/`offset`, `distinct`/`dropDuplicates`, `union`/`unionByName`/`intersect`/`except`, `sample`, `repartition`/`coalesce`, and `hint`.
-- **Columns and functions**: a full `Column` expression algebra (arithmetic, comparison, boolean logic, `like`/`rlike`, `isin`, `between`, `cast`, `when`/`otherwise`, `over`) and a large `org.apache.spark.sql.functions` library (aggregates, string, math, date/time, array/map, JSON, and window functions).
-- **Data sources**: read and write CSV, JSON, Parquet, ORC, and text through `DataFrameReader`/`DataFrameWriter`, including format options, schemas, partitioning, bucketing, and save modes.
-- **SQL**: `spark.sql(...)` with named and positional parameters, plus temporary and global temporary views.
-- **Catalog**: list and inspect catalogs, databases, tables, columns, and functions; manage temp views and the table cache via `spark.catalog`.
-- **Structured Streaming**: streaming sources and sinks, output modes, triggers, watermarks, and a `StreamingQuery` / `StreamingQueryManager` for lifecycle control.
-- **Declarative Pipelines**: build dataflow graphs of tables, materialized views, and flows, then run them on the server.
-- **NA and stat helpers**: `na` for null/NaN handling (`drop`, `fill`, `replace`) and `stat` for `corr`, `cov`, `crosstab`, `freqItems`, `approxQuantile`, and `sampleBy`.
-- **Window functions**: `org.apache.spark.sql.expressions.Window` with `partitionBy`, `orderBy`, `rowsBetween`, and `rangeBetween`.
-- **Observation**: attach an `Observation` to a query to collect aggregate metrics as it runs.
-
-Results decode through Apache Arrow into ordered, name-addressable `Row`s. Method names match Apache Spark's Scala DataFrame API, so existing Spark Scala code ports almost verbatim.
-
-### Not supported
-
-User-defined functions (UDFs) and the streaming `foreach`/`foreachBatch` sinks are not supported. Everything else in the surface above is.
+Results decode through Apache Arrow into ordered, name-addressable `Row`s. Class
+and method names match Apache Spark's Scala API (`SparkSession`, `DataFrame`,
+`Column`, `functions`, `Window`, `Catalog`, ...), so existing Spark Scala code
+ports almost verbatim.
 
 ## Documentation
 

@@ -41,17 +41,11 @@ server plans, optimizes, and executes the query, then streams results back as
 Because the protocol is language-agnostic, the client can live in any language.
 This project is that client for Scala 3.
 
-## Feature highlights
+## What it supports
 
-- **DataFrame API** modeled on Apache Spark's Scala API: `select`, `filter`/`where`, `join`, `groupBy`/`agg`, `orderBy`, `union`, `distinct`, set operations, sampling, and more.
-- **Columns and functions**: a full `Column` expression algebra and the `org.apache.spark.sql.functions` library.
-- **Spark SQL** via `spark.sql(...)`, with named and positional parameters and temporary views.
-- **Data sources**: read and write CSV, JSON, Parquet, ORC, and text.
-- **Catalog**: inspect catalogs, databases, tables, columns, and functions.
-- **Structured Streaming**: streaming sources and sinks, triggers, output modes, watermarks, and query management.
-- **Declarative Pipelines**: dataflow graphs of tables, materialized views, and flows.
-- **NA and stat helpers**, **window functions**, and **observations**.
-- **Arrow-based decoding** of results into name-addressable `Row`s.
+`spark-connect-scala3` implements the Spark Connect DataFrame, SQL, Structured Streaming, and Declarative Pipelines API, modeled directly on Apache Spark's Scala API: everything except user-defined functions (UDFs) and the `foreach`/`foreachBatch` streaming sinks, which run user JVM code on the server that the Spark Connect protocol does not transport. (MLlib over Connect is also out of scope.)
+
+Results decode through Apache Arrow into ordered, name-addressable `Row`s. Class and method names match Apache Spark's Scala API (`SparkSession`, `DataFrame`, `Column`, `functions`, `Window`, `Catalog`, ...), so existing Spark Scala code ports almost verbatim.
 
 ## Project facts
 
