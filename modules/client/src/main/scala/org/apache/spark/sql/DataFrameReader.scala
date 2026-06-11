@@ -152,6 +152,21 @@ class DataFrameReader private[sql] (sparkSession: SparkSession) {
   /** Loads JSON file(s) and returns the result as a [[DataFrame]]. */
   def json(paths: String*): DataFrame = format("json").load(paths: _*)
 
+  /** Parses each row of a `Dataset[String]` as a CSV record, returning a [[DataFrame]]. */
+  def csv(csvDataset: Dataset[String]): DataFrame =
+    parse(csvDataset, proto.Parse.ParseFormat.PARSE_FORMAT_CSV)
+
+  /** Parses each row of a `Dataset[String]` as a JSON object, returning a [[DataFrame]]. */
+  def json(jsonDataset: Dataset[String]): DataFrame =
+    parse(jsonDataset, proto.Parse.ParseFormat.PARSE_FORMAT_JSON)
+
+  private def parse(ds: Dataset[String], format: proto.Parse.ParseFormat): DataFrame =
+    sparkSession.newDataFrame(
+      proto.Relation.RelType.Parse(
+        proto.Parse(input = Some(ds.relation), format = format, options = extraOptions.toMap)
+      )
+    )
+
   /** Loads Parquet file(s) and returns the result as a [[DataFrame]]. */
   def parquet(paths: String*): DataFrame = format("parquet").load(paths: _*)
 

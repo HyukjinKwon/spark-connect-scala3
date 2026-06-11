@@ -294,6 +294,31 @@ class Dataset[T] private[sql] (
     buildJoin(right, Some(joinExprs), Nil, joinType)
   def crossJoin(right: Dataset[?]): DataFrame = buildJoin(right, None, Nil, "cross")
 
+  /** Lateral join with a correlated `right` relation. */
+  def lateralJoin(right: Dataset[?]): DataFrame = buildLateralJoin(right, None, "inner")
+  def lateralJoin(right: Dataset[?], joinExprs: Column): DataFrame =
+    buildLateralJoin(right, Some(joinExprs), "inner")
+  def lateralJoin(right: Dataset[?], joinType: String): DataFrame =
+    buildLateralJoin(right, None, joinType)
+  def lateralJoin(right: Dataset[?], joinExprs: Column, joinType: String): DataFrame =
+    buildLateralJoin(right, Some(joinExprs), joinType)
+
+  private def buildLateralJoin(
+      right: Dataset[?],
+      joinExprs: Option[Column],
+      joinType: String
+  ): DataFrame =
+    withInput(
+      RelType.LateralJoin(
+        proto.LateralJoin(
+          left = Some(relation),
+          right = Some(right.relation),
+          joinCondition = joinExprs.map(_.expr),
+          joinType = Dataset.toJoinType(joinType)
+        )
+      )
+    )
+
   private def buildJoin(
       right: Dataset[?],
       joinExprs: Option[Column],
@@ -742,6 +767,13 @@ class Dataset[T] private[sql] (
 
   /** Creates a v2 (catalog) write configuration builder. */
   def writeTo(table: String): DataFrameWriterV2 = new DataFrameWriterV2(table, this)
+
+  /**
+   * Merges this Dataset (the source) into the `table` (the target) using `condition` to match rows.
+   * Returns a [[MergeIntoWriter]] to configure the WHEN clauses; call `merge()` to run it.
+   */
+  def mergeInto(table: String, condition: Column): MergeIntoWriter[T] =
+    new MergeIntoWriter[T](table, this, condition)
 
   // -- Schema reconciliation & watermark dedup --------------------------------
 

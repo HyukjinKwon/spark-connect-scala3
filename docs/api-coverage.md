@@ -10,11 +10,11 @@ are no surprises.
 | Area | What is covered |
 | ---- | --------------- |
 | `SparkSession` | builder + `remote(...)`, `sql`, `range`, `table`, `createDataFrame`, `conf`, `catalog`, `read`, `readStream`, `streams`, `version`, `addTag`/`interrupt*`, `implicits` |
-| `Dataset` / `DataFrame` | `select`/`selectExpr`, `filter`/`where`, `withColumn(s)`/`withColumnRenamed(s)`, `drop`, `join` (inner/left/right/outer/semi/anti/cross), `groupBy`/`rollup`/`cube`/`agg`/`pivot`, `orderBy`/`sort`/`sortWithinPartitions`, `limit`/`offset`, `distinct`/`dropDuplicates`, `union`/`unionByName`/`intersect(All)`/`except(All)`, `sample`/`randomSplit`, `repartition`/`repartitionByRange`/`coalesce`, `hint`, `unpivot`/`melt`, `transpose`, `toJSON`, `describe`/`summary`, `na`, `stat`, `observe`, `withWatermark`, `checkpoint`/`localCheckpoint`, `persist`/`cache`/`unpersist`/`storageLevel`, `to(Local)Iterator`, `collect`/`count`/`head`/`take`/`first`/`show`, `schema`/`columns`/`dtypes`/`printSchema`/`explain`/`inputFiles`, `sameSemantics`/`semanticHash`, temp/global-temp view creation |
+| `Dataset` / `DataFrame` | `select`/`selectExpr`, `filter`/`where`, `withColumn(s)`/`withColumnRenamed(s)`, `drop`, `join`/`crossJoin`/`lateralJoin` (inner/left/right/outer/semi/anti/cross), `groupBy`/`rollup`/`cube`/`agg`/`pivot`, `orderBy`/`sort`/`sortWithinPartitions`, `limit`/`offset`, `distinct`/`dropDuplicates`, `union`/`unionByName`/`intersect(All)`/`except(All)`, `sample`/`randomSplit`, `repartition`/`repartitionByRange`/`coalesce`, `hint`, `unpivot`/`melt`, `transpose`, `toJSON`, `describe`/`summary`, `na`, `stat`, `observe`, `withWatermark`, `checkpoint`/`localCheckpoint`, `persist`/`cache`/`unpersist`/`storageLevel`, `to(Local)Iterator`, `collect`/`count`/`head`/`take`/`first`/`show`, `schema`/`columns`/`dtypes`/`printSchema`/`explain`/`inputFiles`, `sameSemantics`/`semanticHash`, temp/global-temp view creation |
 | `Column` | full expression algebra: arithmetic, comparison, boolean logic, `like`/`rlike`/`ilike`, `contains`/`startsWith`/`endsWith`, `isin`, `between`, `isNull`/`isNotNull`/`isNaN`, `cast`, `substr`, `getItem`/`getField`, `when`/`otherwise`, `over`, `asc`/`desc`, bitwise ops |
 | `functions` | 400+ functions: aggregate, string, math, date/time, array/map/struct, JSON, conditional, and window functions |
 | `Window` / `WindowSpec` | `partitionBy`, `orderBy`, `rowsBetween`, `rangeBetween` |
-| Data sources | `DataFrameReader`/`DataFrameWriter` for CSV, JSON, Parquet, ORC, text, JDBC, and tables, with options, schema, `partitionBy`/`bucketBy`/`sortBy`, save modes, `saveAsTable`/`insertInto`; `DataFrameWriterV2` (`writeTo`) |
+| Data sources | `DataFrameReader`/`DataFrameWriter` for CSV, JSON, Parquet, ORC, text, JDBC, and tables, with options, schema, `partitionBy`/`bucketBy`/`sortBy`, save modes, `saveAsTable`/`insertInto`; parse an in-memory `Dataset[String]` as CSV/JSON (`read.csv(ds)`/`read.json(ds)`); `DataFrameWriterV2` (`writeTo`); `MergeIntoWriter` (`df.mergeInto(...)`, MERGE INTO) |
 | SQL | `spark.sql(...)` with named and positional parameters; temporary and global temporary views |
 | Catalog | `spark.catalog`: list/inspect catalogs, databases, tables, columns, functions; existence checks; `createTable`/`createExternalTable`; temp-view drops; cache management |
 | Structured Streaming | `DataStreamReader`/`DataStreamWriter`, output modes, triggers (`ProcessingTime`/`Once`/`AvailableNow`/`Continuous`), `start`/`toTable`, `StreamingQuery`, `StreamingQueryManager`, and `StreamingQueryListener` registration (`addListener`/`removeListener`/`listListeners`) with client-side event dispatch |
@@ -44,9 +44,16 @@ These are deliberately out of scope for now.
   Use the relational API (`select`/`agg`/`functions`) for these.
 - **MLlib over Connect** (`spark.ml` / `pyspark.ml` equivalent). Experimental
   upstream and not exposed here.
-- **A few niche / advanced APIs**, including artifact upload (`addArtifact`),
-  `MergeIntoWriter`, artifact-upload-backed features, and some less-common method
-  overloads and protocol relations/commands.
+- **Artifact upload (`addArtifact`).** Shipping local JARs/files to the server
+  is a niche client feature not exposed yet.
+- **Protocol messages that are not standard Scala API.** A handful of Spark
+  Connect relations/commands have no plain Scala DataFrame method because they
+  exist for other languages or for closure execution: the closure relations
+  (`mapPartitions`, `groupMap`/`coGroupMap`, `applyInPandasWithState`), Python
+  user-defined table functions and data sources, the ML relation/commands, and
+  internal optimization relations (server-cached/chunked local relations,
+  `withRelations`). The standard DataFrame, SQL, streaming, and pipeline surface
+  is fully covered.
 
 ## Why these are excluded
 
