@@ -209,6 +209,14 @@ class IntegrationSuite extends munit.FunSuite {
     assert(pipeline != null)
   }
 
+  test("server analysis errors surface as AnalysisException with a clean message") {
+    val e = intercept[AnalysisException] {
+      spark.sql("select * from a_table_that_surely_does_not_exist_scs3").collect()
+    }
+    assert(!e.getMessage.startsWith("INTERNAL"), s"gRPC status code leaked: ${e.getMessage}")
+    assert(e.getMessage.contains("TABLE_OR_VIEW_NOT_FOUND"), e.getMessage)
+  }
+
   test("as[T] decodes rows into a case class") {
     val people = spark.sql("select 1L as id, 'alice' as name").as[ItPerson].collect()
     assertEquals(people.toSeq, Seq(ItPerson(1L, "alice")))

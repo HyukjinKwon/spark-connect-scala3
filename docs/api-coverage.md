@@ -22,7 +22,7 @@ are no surprises.
 | Typed Datasets | `as[T]` and `spark.createDataset` with compile-time `Encoder` derivation for case classes, tuples, primitives, `Option`, collections, and maps; typed actions (`collect`/`head`/`first`/`take`/`collectAsList`/`toLocalIterator`) |
 | Observation | `Observation` for collecting named aggregate metrics while a query runs |
 | Config | `RuntimeConfig` (`spark.conf.get`/`set`/`unset`/`isModifiable`) |
-| Results | Apache Arrow IPC decoding into name-addressable `Row`s; connection-string parsing (`sc://host:port/;k=v`), bearer-token auth (implies TLS), and retry on transient gRPC errors |
+| Results | Apache Arrow IPC decoding into name-addressable `Row`s; connection-string parsing (`sc://host:port/;k=v`); bearer-token auth (implies TLS); server errors surfaced as typed Spark exceptions (AnalysisException/ParseException/SparkException) with the original message and error class |
 
 ## Not supported
 
@@ -63,3 +63,12 @@ which is a separate, security-sensitive subsystem outside this client's scope.
 The encoder-derivation half of the typed `Dataset[T]` API does not require that, so
 `as[T]` and `createDataset` are fully supported; only the closure-driven typed
 operations listed above remain out of scope.
+
+## Known limitations
+
+- **No automatic retry or reattachable execution.** If the gRPC connection drops
+  mid-query, the error is surfaced to the caller rather than transparently retried
+  or resumed. Wrap calls in your own retry logic if you need it.
+- **Server stack traces are not reconstructed.** Errors carry the server's message
+  and error class (and map to `AnalysisException` / `ParseException` /
+  `SparkException`), but the remote JVM stack trace is not rebuilt on the client.

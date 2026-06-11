@@ -65,7 +65,7 @@ class SparkConnectClient private[sql] (
       plan = Some(plan),
       clientType = Some(userAgent)
     )
-    stub.executePlan(request)
+    GrpcExceptionConverter.convertIterator(stub.executePlan(request))
   }
 
   // ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ class SparkConnectClient private[sql] (
       clientType = Some(userAgent),
       analyze = analyze
     )
-    stub.analyzePlan(request)
+    GrpcExceptionConverter.convert(stub.analyzePlan(request))
   }
 
   private[sql] def analyzeSchema(plan: proto.Plan): proto.DataType =
@@ -156,7 +156,7 @@ class SparkConnectClient private[sql] (
       clientType = Some(userAgent),
       operation = Some(operation)
     )
-    stub.config(request)
+    GrpcExceptionConverter.convert(stub.config(request))
   }
 
   private[sql] def setConf(key: String, value: String): Unit =
@@ -214,25 +214,29 @@ class SparkConnectClient private[sql] (
   // ---------------------------------------------------------------------------
 
   private[sql] def interruptAll(): Seq[String] = {
-    val response = stub.interrupt(
-      proto.InterruptRequest(
-        sessionId = sessionId,
-        userContext = Some(userContext),
-        clientType = Some(userAgent),
-        interruptType = proto.InterruptRequest.InterruptType.INTERRUPT_TYPE_ALL
+    val response = GrpcExceptionConverter.convert(
+      stub.interrupt(
+        proto.InterruptRequest(
+          sessionId = sessionId,
+          userContext = Some(userContext),
+          clientType = Some(userAgent),
+          interruptType = proto.InterruptRequest.InterruptType.INTERRUPT_TYPE_ALL
+        )
       )
     )
     response.interruptedIds
   }
 
   private[sql] def interruptTag(tag: String): Seq[String] = {
-    val response = stub.interrupt(
-      proto.InterruptRequest(
-        sessionId = sessionId,
-        userContext = Some(userContext),
-        clientType = Some(userAgent),
-        interruptType = proto.InterruptRequest.InterruptType.INTERRUPT_TYPE_TAG,
-        interrupt = proto.InterruptRequest.Interrupt.OperationTag(tag)
+    val response = GrpcExceptionConverter.convert(
+      stub.interrupt(
+        proto.InterruptRequest(
+          sessionId = sessionId,
+          userContext = Some(userContext),
+          clientType = Some(userAgent),
+          interruptType = proto.InterruptRequest.InterruptType.INTERRUPT_TYPE_TAG,
+          interrupt = proto.InterruptRequest.Interrupt.OperationTag(tag)
+        )
       )
     )
     response.interruptedIds
