@@ -60,7 +60,10 @@ class ShowStringSuite extends munit.FunSuite {
   test("truncation adds an ellipsis at the requested width") {
     assertEquals(ShowString.formatCell("abcdefghijklmnopqrstuvwxyz", 10), "abcdefg...")
     assertEquals(ShowString.formatCell("short", 10), "short")
-    assertEquals(ShowString.formatCell("nolimit-aaaaaaaaaaaaaaaaaa", 0), "nolimit-aaaaaaaaaaaaaaaaaa")
+    assertEquals(
+      ShowString.formatCell("nolimit-aaaaaaaaaaaaaaaaaa", 0),
+      "nolimit-aaaaaaaaaaaaaaaaaa"
+    )
   }
 
   test("null and collection cells") {

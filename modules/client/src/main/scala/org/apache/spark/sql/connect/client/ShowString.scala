@@ -25,8 +25,8 @@ import org.apache.spark.sql.types.StructType
  * `Dataset.showString` in Apache Spark (horizontal and vertical). Rendering locally from collected
  * rows keeps `show()` deterministic and exactly consistent with `collect()`.
  *
- * The caller passes up to `numRows + 1` rows; the extra row (if present) only triggers the
- * "only showing top N rows" footer and is not displayed.
+ * The caller passes up to `numRows + 1` rows; the extra row (if present) only triggers the "only
+ * showing top N rows" footer and is not displayed.
  */
 object ShowString {
 
@@ -35,7 +35,8 @@ object ShowString {
       schema: StructType,
       numRows: Int,
       truncate: Int,
-      vertical: Boolean): String = {
+      vertical: Boolean
+  ): String = {
     val hasMoreData = rows.length > numRows
     val take = rows.take(numRows)
     val header = schema.fieldNames.toSeq
