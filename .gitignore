@@ -1,0 +1,11 @@
+target/
+project/target/
+project/project/
+.bsp/
+.bloop/
+.metals/
+.scala-build/
+.idea/
+.vscode/
+.DS_Store
+*.log
