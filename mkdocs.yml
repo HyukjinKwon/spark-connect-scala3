@@ -49,5 +49,5 @@ nav:
   - Configuration and Connection: configuration.md
   - Examples: examples.md
   - Troubleshooting: troubleshooting.md
-  - API (Scaladoc): /api/
+  - API (Scaladoc): https://hyukjinkwon.github.io/spark-connect-scala3/api/
   - Contributing: contributing.md

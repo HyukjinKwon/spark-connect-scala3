@@ -68,4 +68,4 @@ Results decode through Apache Arrow into ordered, name-addressable `Row`s. Class
 | [Declarative Pipelines](pipelines.md) | Dataflow graphs |
 | [Configuration and Connection](configuration.md) | Connection strings and runtime config |
 | [Examples](examples.md) | Runnable programs |
-| [API (Scaladoc)](/api/) | Generated method-level reference |
+| [API (Scaladoc)](https://hyukjinkwon.github.io/spark-connect-scala3/api/) | Generated method-level reference |
