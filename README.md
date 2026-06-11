@@ -114,7 +114,7 @@ User-defined functions (UDFs) and the streaming `foreach`/`foreachBatch` sinks a
 
 Full documentation, including guides for every part of the API and the generated Scaladoc, lives at **<https://hyukjinkwon.github.io/spark-connect-scala3/>**.
 
-Runnable programs under [`modules/examples/`](modules/examples/) cover the quickstart, aggregations, joins, word count, SQL and views, window functions, and reading and writing.
+Runnable programs under [`modules/examples/`](modules/examples/) cover the quickstart, aggregations, joins, word count, SQL and views, window functions, reading and writing, Structured Streaming, and Declarative Pipelines.
 
 ## Contributing
 
