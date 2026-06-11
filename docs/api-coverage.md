@@ -19,6 +19,7 @@ are no surprises.
 | Catalog | `spark.catalog`: list/inspect catalogs, databases, tables, columns, functions; existence checks; `createTable`/`createExternalTable`; temp-view drops; cache management |
 | Structured Streaming | `DataStreamReader`/`DataStreamWriter`, output modes, triggers (`ProcessingTime`/`Once`/`AvailableNow`/`Continuous`), `start`/`toTable`, `StreamingQuery`, `StreamingQueryManager` |
 | Declarative Pipelines | build graphs of tables, materialized views, temporary views, sinks, and flows, then run them on the server |
+| Typed Datasets | `as[T]` and `spark.createDataset` with compile-time `Encoder` derivation for case classes, tuples, primitives, `Option`, collections, and maps; typed actions (`collect`/`head`/`first`/`take`/`collectAsList`/`toLocalIterator`) |
 | Observation | `Observation` for collecting named aggregate metrics while a query runs |
 | Config | `RuntimeConfig` (`spark.conf.get`/`set`/`unset`/`isModifiable`) |
 | Results | Apache Arrow IPC decoding into name-addressable `Row`s; connection-string parsing (`sc://host:port/;k=v`), bearer-token auth (implies TLS), and retry on transient gRPC errors |
@@ -33,14 +34,14 @@ These are deliberately out of scope for now.
 - **Streaming `foreach` / `foreachBatch` sinks.** Same reason: they execute a
   user function per row/batch on the server. All built-in sinks
   (parquet/console/memory/kafka/...) are supported.
-- **The typed `Dataset[T]` / `Encoder` API.** `Dataset` is effectively untyped
-  (`DataFrame = Dataset[Row]`). There is no `Encoder` derivation, so the
-  following are not available:
-    - `as[T]` to a case class, and typed `collect[T]`/`map`/`flatMap`/`reduce`
+- **Typed `Dataset` operations that take a Scala closure.** `as[T]` and
+  `createDataset` are supported (encoder-only, no closure), but the operations
+  below run a user function on the server and are not available:
+    - typed `map` / `flatMap` / `mapPartitions` / `reduce`
     - `groupByKey` and `KeyValueGroupedDataset` (`mapGroups`, `flatMapGroups`,
       `cogroup`, typed `agg`)
     - typed `Aggregator`s
-  Use the relational API (`select`/`agg`/`functions`) and read results as `Row`.
+  Use the relational API (`select`/`agg`/`functions`) for these.
 - **MLlib over Connect** (`spark.ml` / `pyspark.ml` equivalent). Experimental
   upstream and not exposed here.
 - **A few niche / advanced APIs**, including artifact upload (`addArtifact`),
@@ -52,6 +53,6 @@ These are deliberately out of scope for now.
 UDFs, `foreach`/`foreachBatch`, and the typed closure operations all require
 sending user-compiled JVM code to the server (artifact upload + class loading),
 which is a separate, security-sensitive subsystem outside this client's scope.
-The encoder-derivation half of the typed `Dataset[T]` API does not require that,
-and is the most likely candidate for a future release; everything else above is
-fully supported today.
+The encoder-derivation half of the typed `Dataset[T]` API does not require that, so
+`as[T]` and `createDataset` are fully supported; only the closure-driven typed
+operations listed above remain out of scope.
