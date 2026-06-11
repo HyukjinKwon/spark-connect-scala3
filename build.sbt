@@ -93,7 +93,7 @@ lazy val client = (project in file("modules/client"))
       // Pure-Java sketch impls (CountMinSketch / BloomFilter) used by stat functions to
       // deserialize the binary produced by the server-side aggregates. `intransitive` keeps
       // the client free of any Scala 2.13 / Spark runtime transitive dependencies.
-      "org.apache.spark" % "spark-sketch_2.13" % "4.0.0" intransitive (),
+      "org.apache.spark" % "spark-sketch_2.13" % "4.1.2" intransitive (),
       "org.scalameta" %% "munit" % "1.0.2" % Test
     ),
     testFrameworks += new TestFramework("munit.Framework"),
