@@ -6,8 +6,11 @@ ThisBuild / scalaVersion := "3.3.6"
 // Version is derived from git tags by sbt-dynver (via sbt-ci-release): a tag like
 // `v0.1.0` publishes `0.1.0`; untagged builds get a `-SNAPSHOT` version.
 ThisBuild / versionScheme := Some("early-semver")
-ThisBuild / sonatypeCredentialHost := "s01.oss.sonatype.org"
-ThisBuild / sonatypeRepository := "https://s01.oss.sonatype.org/service/local"
+// Publish through the Sonatype Central Portal (central.sonatype.com). The legacy
+// OSSRH hosts (oss.sonatype.org / s01.oss.sonatype.org) were sunset in 2025, so new
+// namespaces publish via the Central Portal, which sbt-ci-release targets when the
+// credential host is set to central.sonatype.com.
+ThisBuild / sonatypeCredentialHost := "central.sonatype.com"
 ThisBuild / homepage := Some(url("https://github.com/HyukjinKwon/spark-connect-scala3"))
 ThisBuild / licenses := Seq("Apache-2.0" -> url("https://www.apache.org/licenses/LICENSE-2.0"))
 ThisBuild / developers := List(
