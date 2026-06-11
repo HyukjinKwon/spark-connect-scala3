@@ -56,6 +56,28 @@ class SparkConnectClient private[sql] (
       userName = configuration.userName.getOrElse(configuration.userId.getOrElse(""))
     )
 
+  // Converts gRPC errors into Spark exceptions, using the FetchErrorDetails RPC to reconstruct the
+  // full server stack trace and cause chain when the server attaches an error id.
+  private val exceptions = new GrpcExceptionConverter(fetchErrorDetails)
+
+  /**
+   * Fetches the server's structured error details for an error id. Uses the raw stub (never the
+   * exception converter) so a failure here can't recurse; returns `None` on any problem.
+   */
+  private def fetchErrorDetails(errorId: String): Option[proto.FetchErrorDetailsResponse] =
+    try
+      Some(
+        stub.fetchErrorDetails(
+          proto.FetchErrorDetailsRequest(
+            sessionId = sessionId,
+            userContext = Some(userContext),
+            errorId = errorId,
+            clientType = Some(userAgent)
+          )
+        )
+      )
+    catch { case scala.util.control.NonFatal(_) => None }
+
   // ---------------------------------------------------------------------------
   // ExecutePlan
   // ---------------------------------------------------------------------------
@@ -75,7 +97,7 @@ class SparkConnectClient private[sql] (
         // Non-reattachable: retry only the initial call (safe before any response is consumed).
         retryHandler.retry(stub.executePlan(request))
       }
-    GrpcExceptionConverter.convertIterator(responses)
+    exceptions.convertIterator(responses)
   }
 
   // ---------------------------------------------------------------------------
@@ -89,7 +111,7 @@ class SparkConnectClient private[sql] (
       clientType = Some(userAgent),
       analyze = analyze
     )
-    GrpcExceptionConverter.convert(retryHandler.retry(stub.analyzePlan(request)))
+    exceptions.convert(retryHandler.retry(stub.analyzePlan(request)))
   }
 
   private[sql] def analyzeSchema(plan: proto.Plan): proto.DataType =
@@ -166,7 +188,7 @@ class SparkConnectClient private[sql] (
       clientType = Some(userAgent),
       operation = Some(operation)
     )
-    GrpcExceptionConverter.convert(retryHandler.retry(stub.config(request)))
+    exceptions.convert(retryHandler.retry(stub.config(request)))
   }
 
   private[sql] def setConf(key: String, value: String): Unit =
@@ -224,7 +246,7 @@ class SparkConnectClient private[sql] (
   // ---------------------------------------------------------------------------
 
   private[sql] def interruptAll(): Seq[String] = {
-    val response = GrpcExceptionConverter.convert(
+    val response = exceptions.convert(
       stub.interrupt(
         proto.InterruptRequest(
           sessionId = sessionId,
@@ -238,7 +260,7 @@ class SparkConnectClient private[sql] (
   }
 
   private[sql] def interruptTag(tag: String): Seq[String] = {
-    val response = GrpcExceptionConverter.convert(
+    val response = exceptions.convert(
       stub.interrupt(
         proto.InterruptRequest(
           sessionId = sessionId,
