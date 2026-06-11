@@ -1,0 +1,44 @@
+# --- Build output ---
+target/
+project/target/
+project/project/
+.bsp/
+.bloop/
+.metals/
+.scala-build/
+
+# --- Generated sources (regenerated from .proto by sbt-protoc) ---
+# (kept out of VCS; CI regenerates them)
+
+# --- Editor / OS ---
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# --- Logs / scratch ---
+*.log
+
+# --- Agent coordination & working notes (local-only, never published) ---
+# All inter-agent communication and scratch lives here and must not ship.
+# NOTE: .team/ holds non-.md files (e.g. claims/*/owner) that the `*.md` rule
+# below does NOT catch, so it must be ignored explicitly or it would be pushed.
+.team/
+.hjk_work/
+
+# --- Peer scratch trees (non-canonical; never built, never shipped) ---
+_protosrc/
+connect-client/
+connector/
+
+# Working notes are local-only. Only README.md, LICENSE, NOTICE and the docs/
+# sources are tracked; use `git add -f` to track another markdown file.
+*.md
+!README.md
+!CONTRIBUTING.md
+!CHANGELOG.md
+!CODE_OF_CONDUCT.md
+!SECURITY.md
+!docs/**/*.md
+!examples/**/*.md
+!.github/**/*.md

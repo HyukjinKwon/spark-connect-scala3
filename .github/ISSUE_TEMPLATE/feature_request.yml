@@ -1,0 +1,21 @@
+name: Feature request
+description: Suggest an API or capability
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      placeholder: I want to ... but the client doesn't support ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API
+      description: If this mirrors an Apache Spark API, link it and show the desired usage.
+      render: scala
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

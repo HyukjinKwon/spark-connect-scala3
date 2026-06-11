@@ -1,0 +1,86 @@
+site_name: spark-connect-scala3
+site_description: A native Scala 3 client for Apache Spark Connect.
+site_author: Hyukjin Kwon
+site_url: https://hyukjinkwon.github.io/spark-connect-scala3/
+repo_name: HyukjinKwon/spark-connect-scala3
+repo_url: https://github.com/HyukjinKwon/spark-connect-scala3
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2026 Hyukjin Kwon — Apache License 2.0
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - search.suggest
+    - search.highlight
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  icon:
+    repo: fontawesome/brands/github
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - tables
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/HyukjinKwon/spark-connect-scala3
+  version:
+    provider: mike
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - User Guide:
+      - SparkSession: guide/sparksession.md
+      - DataFrame & Dataset: guide/dataframe.md
+      - Columns & Functions: guide/columns-and-functions.md
+      - Reading & Writing Data: guide/io.md
+      - Running SQL: guide/sql.md
+      - Data Types & Schemas: guide/types.md
+  - Reference:
+      - Architecture: reference/architecture.md
+      - Compatibility: reference/compatibility.md
+      - Configuration: reference/configuration.md
+  - Examples: examples.md
+  - API Reference (Scaladoc): https://hyukjinkwon.github.io/spark-connect-scala3/api/
+  - Contributing: contributing.md

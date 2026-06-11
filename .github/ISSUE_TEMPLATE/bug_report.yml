@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a problem with spark-connect-scala3
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to file a bug report!
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, including the full stack trace if any.
+      placeholder: When I call df.collect() ...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The smallest code snippet that reproduces the problem.
+      render: scala
+    validations:
+      required: true
+  - type: input
+    id: library-version
+    attributes:
+      label: spark-connect-scala3 version
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: spark-version
+    attributes:
+      label: Spark Connect server version
+      placeholder: Apache Spark 4.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: jdk
+    attributes:
+      label: JDK
+      options: ["17", "21", "other"]
+    validations:
+      required: true
+  - type: input
+    id: scala-version
+    attributes:
+      label: Scala version
+      placeholder: 3.3.4
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Logs, environment details, links.

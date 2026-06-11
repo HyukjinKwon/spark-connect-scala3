@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / discussion
+    url: https://github.com/HyukjinKwon/spark-connect-scala3/discussions
+    about: Ask usage questions and share ideas in Discussions.
+  - name: Apache Spark documentation
+    url: https://spark.apache.org/docs/latest/spark-connect-overview.html
+    about: Reference for the Spark Connect protocol and the Spark SQL API.

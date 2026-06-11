@@ -1,0 +1,24 @@
+spark-connect-scala3
+Copyright 2026 Hyukjin Kwon and contributors
+
+This product includes software developed at
+The Apache Software Foundation (https://www.apache.org/).
+
+This project is an independent, native Scala 3 client implementation of the
+Apache Spark Connect protocol. It is NOT affiliated with, endorsed by, or an
+official product of the Apache Software Foundation.
+
+The Spark Connect protocol buffer definitions under
+`modules/proto/src/main/protobuf/spark/connect/` are vendored from Apache Spark
+(https://github.com/apache/spark), version 4.0.0, and are licensed under the
+Apache License, Version 2.0.
+
+"Apache", "Apache Spark", and "Spark" are trademarks of the Apache Software
+Foundation. Use of these names is for identification purposes only and does not
+imply endorsement.
+
+This product depends on software developed by third parties, including but not
+limited to:
+  - ScalaPB (https://scalapb.github.io/), Apache License 2.0
+  - gRPC (https://grpc.io/), Apache License 2.0
+  - Apache Arrow (https://arrow.apache.org/), Apache License 2.0
