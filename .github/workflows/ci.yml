@@ -52,15 +52,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Pinned to the latest patch of each line, which the Apache CDN (dlcdn)
+        # actively hosts. Older patches live only on the throttled archive mirror
+        # and time out the 390 MB download in CI, so we always track the current
+        # patch: 3.5.x, 4.0.x, 4.1.x.
         include:
           # Spark 3.5.x does not bundle the Connect server: use the Scala 2.13
           # distribution and pull the server in with --packages.
-          - spark: "3.5.6"
-            tarball: "spark-3.5.6-bin-hadoop3-scala2.13.tgz"
-            packages: "--packages org.apache.spark:spark-connect_2.13:3.5.6"
+          - spark: "3.5.8"
+            tarball: "spark-3.5.8-bin-hadoop3-scala2.13.tgz"
+            packages: "--packages org.apache.spark:spark-connect_2.13:3.5.8"
           # Spark 4.0+ bundles the Connect server; the default tarball works.
-          - spark: "4.0.2"
-            tarball: "spark-4.0.2-bin-hadoop3.tgz"
+          - spark: "4.0.3"
+            tarball: "spark-4.0.3-bin-hadoop3.tgz"
             packages: ""
           - spark: "4.1.2"
             tarball: "spark-4.1.2-bin-hadoop3.tgz"
@@ -97,15 +101,24 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ~/spark
-          # Prefer the Apache CDN (fast); fall back to the archive. Bounded timeouts
-          # and retries so a slow mirror can never hang the job.
+          # The Apache CDN (dlcdn) only serves current releases, so older patch
+          # versions (e.g. 3.5.6, 4.0.2) live only on the archive, which can be slow
+          # or throttled. Try the CDN first, then make several resilient attempts at
+          # the archive. A successful download is cached (keyed on the tarball name),
+          # so this only has to succeed once per version.
           ok=false
           for base in "https://dlcdn.apache.org/spark" "https://archive.apache.org/dist/spark"; do
             url="$base/spark-${{ matrix.spark }}/${{ matrix.tarball }}"
-            echo "Downloading $url"
-            if curl -fL --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 900 "$url" -o /tmp/spark.tgz; then
-              ok=true; break
-            fi
+            for attempt in 1 2 3 4 5; do
+              echo "Downloading $url (attempt $attempt)"
+              if curl -fL --retry 5 --retry-all-errors --retry-delay 15 \
+                   --connect-timeout 30 --max-time 1200 "$url" -o /tmp/spark.tgz; then
+                ok=true; break
+              fi
+              echo "Attempt $attempt failed for $url"
+              sleep 20
+            done
+            [ "$ok" = "true" ] && break
             echo "Mirror failed: $url"
           done
           if [ "$ok" != "true" ]; then echo "All Spark mirrors failed"; exit 1; fi
