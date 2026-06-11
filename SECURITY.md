@@ -2,13 +2,12 @@
 
 ## Supported versions
 
-This project is pre-1.0; security fixes are applied to the latest released `0.x`
-version and `main`.
+Security fixes are applied to the latest released version and `main`.
 
 | Version | Supported |
 |---------|-----------|
-| latest `0.x` | ✅ |
-| older | ❌ |
+| latest release | yes |
+| older | no |
 
 ## Reporting a vulnerability
 

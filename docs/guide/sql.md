@@ -1,6 +1,6 @@
 # Running SQL
 
-You can mix the DataFrame API with raw SQL freely — both compile to the same
+You can mix the DataFrame API with raw SQL freely - both compile to the same
 server-side plans.
 
 ## Executing SQL
@@ -22,7 +22,7 @@ spark.sql("SELECT * FROM events")
 
 ## Parameterised SQL
 
-Avoid string interpolation for user input — use named or positional parameters,
+Avoid string interpolation for user input - use named or positional parameters,
 which are sent to the server separately:
 
 ```scala

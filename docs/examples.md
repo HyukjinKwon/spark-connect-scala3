@@ -42,7 +42,7 @@ object QuickStart:
 
 ## Word count
 
-The "hello world" of data processing — split text, explode to rows, group and count.
+The "hello world" of data processing - split text, explode to rows, group and count.
 
 ```scala
 val lines = Seq(
@@ -76,6 +76,31 @@ Round-trip a `DataFrame` through parquet on the server's filesystem.
 
 Per-partition ranking and running totals with `Window`.
 
+## Structured Streaming
+
+Read a stream, transform it, and write to a sink - see the
+[Structured Streaming guide](guide/streaming.md) for the full API.
+
+```scala
+val rates = spark.readStream
+  .format("rate")
+  .option("rowsPerSecond", 10)
+  .load()
+
+val query = rates
+  .selectExpr("value", "value % 5 AS bucket")
+  .writeStream
+  .format("memory")
+  .queryName("rates")
+  .outputMode("append")
+  .trigger(Trigger.ProcessingTime("1 second"))
+  .start()
+
+query.processAllAvailable()
+spark.sql("SELECT bucket, count(*) FROM rates GROUP BY bucket").show()
+query.stop()
+```
+
 !!! tip
-    The example sources are the most up-to-date reference for idiomatic usage —
+    The example sources are the most up-to-date reference for idiomatic usage -
     they're compiled in CI, so they never drift from the API.

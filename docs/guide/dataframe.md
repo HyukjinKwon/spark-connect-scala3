@@ -30,9 +30,11 @@ These return a new `DataFrame` and do not contact the server.
 | `join(other, cond, type)` | Join two frames |
 | `union(other)` / `unionByName(other)` | Set union |
 | `intersect(other)` / `except(other)` | Set operations |
-| `sample(fraction)` | Random sample |
+| `sample(fraction)` / `randomSplit(weights)` | Random sample / split |
 | `repartition(n)` / `coalesce(n)` | Change partitioning |
+| `unpivot` / `transpose` | Reshape wide <-> long |
 | `na` | Null-handling sub-API (`drop`, `fill`, `replace`) |
+| `stat` | Statistical sub-API (`approxQuantile`, `corr`, `cov`, `crosstab`, `freqItems`, `sampleBy`) |
 
 ```scala
 val joined = orders
@@ -58,7 +60,13 @@ val byKey = events
 
 `groupBy` returns a `RelationalGroupedDataset`, which also offers shortcuts such as
 `count()`, `sum(cols*)`, `avg(cols*)`, `max(cols*)`, `min(cols*)`, `agg(Map)`, and
-`pivot(col, values)`.
+`pivot(col, values)`. For multi-dimensional aggregation use `rollup(cols*)` and
+`cube(cols*)`, which return a `RelationalGroupedDataset` the same way `groupBy` does:
+
+```scala
+sales.rollup($"region", $"product").agg(sum($"amount").as("total"))
+sales.cube($"region", $"product").agg(sum($"amount").as("total"))
+```
 
 ## Actions
 

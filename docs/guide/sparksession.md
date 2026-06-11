@@ -1,7 +1,7 @@
 # SparkSession
 
 `SparkSession` is the entry point. With Spark Connect it is a *thin* handle over a
-gRPC connection to a remote server — creating one does not start a Spark driver in
+gRPC connection to a remote server - creating one does not start a Spark driver in
 your process.
 
 ## Building a session
@@ -25,9 +25,10 @@ Common parameters:
 
 | Parameter  | Meaning                                            |
 |------------|----------------------------------------------------|
-| `token`    | Bearer token for authentication                    |
+| `token`    | Bearer token for authentication (implies TLS)      |
 | `use_ssl`  | `true` to use TLS                                  |
 | `user_id`  | User identity to attach to the session             |
+| `user_agent` | Overrides the client user-agent                  |
 | `session_id` | Reconnect to an existing server-side session     |
 
 If `remote(...)` is omitted, the builder falls back to the `SPARK_REMOTE`

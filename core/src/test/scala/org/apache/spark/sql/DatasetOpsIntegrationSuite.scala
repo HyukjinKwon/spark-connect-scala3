@@ -111,3 +111,30 @@ class DatasetOpsIntegrationSuite extends munit.FunSuite:
     val df = spark.range(2).toDF("renamed")
     assertEquals(df.columns.toSeq, Seq("renamed"))
   }
+
+  test("grouped stddev and variance aggregate numeric columns") {
+    val df = spark.range(1, 5).select((col("id") % lit(2)).as("g"), col("id").as("v"))
+    val r = df.groupBy(col("g")).stddev("v").collect()
+    assertEquals(r.length, 2)
+    // population variance over all numeric columns also works (uses schema to pick numeric cols)
+    assert(df.groupBy(col("g")).variance("v").columns.contains("var_samp(v)"))
+  }
+
+  test("create_map / map_contains_key round-trip through the server") {
+    val df = spark
+      .range(1)
+      .select(create_map(lit("k"), lit(1)).as("m"))
+      .select(map_contains_key(col("m"), "k").as("has"))
+    assertEquals(df.collect().head.getBoolean(0), true)
+  }
+
+  test("regexp_substr extracts the matched substring") {
+    val df = spark.sql("SELECT 'a1b2' AS s").select(regexp_substr(col("s"), lit("[0-9]+")).as("d"))
+    assertEquals(df.collect().head.getString(0), "1")
+  }
+
+  test("unpivot reshapes wide to long") {
+    val df = spark.sql("SELECT 1 AS id, 10 AS a, 20 AS b")
+    val long = df.unpivot(Array(col("id")), Array(col("a"), col("b")), "key", "val")
+    assertEquals(long.count(), 2L)
+  }

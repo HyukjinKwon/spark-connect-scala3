@@ -8,45 +8,14 @@ A native **Scala 3** client for [Apache Spark Connect](https://spark.apache.org/
 [![Scala 3](https://img.shields.io/badge/scala-3.3%20LTS-red.svg)](https://www.scala-lang.org/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Talk to a Spark cluster from a lightweight Scala 3 application — no Spark JARs, no
+Talk to a Spark cluster from a lightweight Scala 3 application - no Spark JARs, no
 Scala 2 classpath, no embedded JVM driver. `spark-connect-scala3` speaks the Spark
-Connect gRPC protocol directly and gives you the `DataFrame` API you already know.
+Connect gRPC protocol directly and gives you the full `DataFrame`/`Dataset` API you
+already know from Apache Spark.
 
-> **Status:** early but functional. The DataFrame/Column/functions surface mirrors
-> Apache Spark's Scala API. See the [compatibility matrix](https://hyukjinkwon.github.io/spark-connect-scala3/reference/compatibility/).
-
----
-
-## Why?
-
-The official Spark Connect Scala client is published for Scala 2.12/2.13 and pulls in
-a large part of the Spark codebase. If your application is on **Scala 3**, you either
-cross-compile against Scala 2 artifacts or you can't use it at all.
-
-`spark-connect-scala3` is:
-
-- **Scala 3 first** — published as `_3`, built with the Scala 3 LTS compiler.
-- **Thin** — a few MB of gRPC + Arrow + ScalaPB, instead of the full Spark assembly.
-- **Familiar** — the public API lives under `org.apache.spark.sql.*` and matches the
-  names and shapes of Apache Spark, so existing Spark Scala code largely just compiles.
-- **Remote** — connects to any Spark Connect server (Apache Spark 3.5+, Databricks
-  Connect-compatible endpoints, local `start-connect-server.sh`).
-
-## Quick start
-
-Add the dependency (Scala 3):
-
-```scala
-libraryDependencies += "io.github.hyukjinkwon" %% "spark-connect-scala3" % "0.1.0"
-```
-
-Start a Spark Connect server (Apache Spark 4.0):
-
-```bash
-./sbin/start-connect-server.sh --packages org.apache.spark:spark-connect_2.13:4.0.0
-```
-
-Then:
+The public API lives under `org.apache.spark.sql.*` and mirrors Apache Spark's Scala
+API: `SparkSession`, `DataFrame`/`Dataset`, `Column`, `functions`, `Window`, `Catalog`,
+`DataFrameReader`/`Writer`, and Structured Streaming all work exactly as you'd expect.
 
 ```scala
 import org.apache.spark.sql.SparkSession
@@ -82,29 +51,95 @@ import org.apache.spark.sql.functions.*
 See the [**Getting Started guide**](https://hyukjinkwon.github.io/spark-connect-scala3/getting-started/)
 and [**runnable examples**](examples/).
 
+---
+
+## Why?
+
+The official Spark Connect Scala client is published for Scala 2.12/2.13 and pulls in
+a large part of the Spark codebase. If your application is on **Scala 3**, you either
+cross-compile against Scala 2 artifacts or you can't use it at all.
+
+`spark-connect-scala3` is:
+
+- **Scala 3 first** - published as `_3`, built with the Scala 3 LTS compiler.
+- **Thin** - a few MB of gRPC + Arrow + ScalaPB, instead of the full Spark assembly.
+- **Familiar** - the public API lives under `org.apache.spark.sql.*` and matches the
+  names and shapes of Apache Spark, so existing Spark Scala code largely just compiles.
+- **Remote** - connects to any Spark Connect server over gRPC.
+
+## Install
+
+Add the dependency (the `%%` operator appends the Scala 3 `_3` suffix):
+
+```scala
+libraryDependencies += "io.github.hyukjinkwon" %% "spark-connect-scala3" % "0.1.0"
+```
+
+## Start a Spark Connect server
+
+Download Apache Spark and start a server locally:
+
+```bash
+curl -fsSL https://archive.apache.org/dist/spark/spark-4.1.0/spark-4.1.0-bin-hadoop3.tgz \
+  | tar xz
+cd spark-4.1.0-bin-hadoop3
+./sbin/start-connect-server.sh
+```
+
+Spark 4.0.0 and later bundle the Connect server, so no `--packages` flag is required.
+The server listens on `sc://localhost:15002` by default; pass
+`--conf spark.connect.grpc.binding.port=15002` to set the port explicitly. Stop it with
+`./sbin/stop-connect-server.sh`.
+
+> Only Spark 3.5.x needs the server to be added explicitly, with
+> `--packages org.apache.spark:spark-connect_2.13:3.5.x`. From Spark 4.0.0 onward it is
+> bundled.
+
+## Connecting
+
+`remote(...)` takes a standard Spark Connect connection string:
+
+```scala
+// local, plaintext
+SparkSession.builder().remote("sc://localhost:15002").getOrCreate()
+
+// TLS + bearer token (a token implies TLS)
+SparkSession.builder()
+  .remote(s"sc://spark.example.com:443/;token=${sys.env("SPARK_TOKEN")};user_id=alice")
+  .getOrCreate()
+```
+
+Supported parameters: `token`, `user_id`, `user_agent`, `use_ssl`, `session_id`.
+
 ## Features
 
-| Area | Highlights |
-|------|------------|
-| Session | `SparkSession.builder().remote(...)`, config, `sql(...)`, `range(...)`, `createDataFrame(...)` |
-| DataFrame | `select`, `filter`/`where`, `withColumn`, `join`, `groupBy`/`agg`, `orderBy`, `union`, `distinct`, `limit`, `drop`, `withColumnRenamed`, `na`, `sample`, … |
+| Area | What's included |
+|------|-----------------|
+| Session | `SparkSession.builder().remote(...)`, `config`, `sql`, `range`, `table`, `createDataFrame`, `conf`, `catalog`, `version`, `stop` |
+| DataFrame / Dataset | `select`, `filter`/`where`, `withColumn`, `join`, `groupBy`/`agg`, `rollup`, `cube`, `pivot`, window, `union`, `sort`, `limit`, `distinct`, `na`, `stat`, `unpivot`, `describe`, and the rest of the relational API |
 | Column | full expression DSL: arithmetic, comparison, `when`/`otherwise`, `cast`, `isin`, `like`, `getItem`, `getField`, `over(window)` |
-| functions | aggregate, math, string, date/time, collection, conditional, window functions |
+| functions | the `functions` object - 400+ aggregate, math, string, date/time, collection, conditional, and window functions |
+| Implicits | `import spark.implicits._` for `$"col"` and `Seq(...).toDF(...)` |
+| Window | `Window.partitionBy(...).orderBy(...)`, `rowsBetween`, `rangeBetween` |
 | Types | complete `org.apache.spark.sql.types` hierarchy with proto round-tripping |
-| Results | Apache Arrow columnar decode → `Row`, `collect`/`show`/`count`/`take`/`head`/`toLocalIterator` |
-| I/O | `DataFrameReader`/`DataFrameWriter` (parquet/json/csv/orc/text), `Catalog` |
+| Results | Apache Arrow columnar decode -> `Row`, `collect`/`show`/`count`/`take`/`head`/`toLocalIterator` |
+| I/O | `DataFrameReader`/`Writer` (csv/json/parquet/orc/text/jdbc/table), `saveAsTable`/`insertInto`, `partitionBy`/`bucketBy`/`sortBy`, `DataFrameWriterV2` |
+| Catalog | databases, tables, columns, functions, temp views, caching |
+| Streaming | Structured Streaming: `readStream`/`writeStream`, triggers, output modes, watermarks, `StreamingQuery`, `StreamingQueryManager` |
 
-A full, always-current list lives in the [compatibility matrix](https://hyukjinkwon.github.io/spark-connect-scala3/reference/compatibility/).
+**Not supported:** user-defined functions (UDFs/UDAFs/UDTFs) and the `foreach`/`foreachBatch`
+streaming sinks, because they require shipping user JVM closures to the server.
+Everything else in the Spark Connect surface is implemented.
 
 ## How it works
 
 ```
 your Scala 3 app
-      │  org.apache.spark.sql.DataFrame  (lazy, builds a proto plan)
-      ▼
-SparkConnectClient ──gRPC (HTTP/2)──▶ Spark Connect server ──▶ Spark cluster
-      ▲                                        │
-      └────── Apache Arrow record batches ◀────┘
+      |  org.apache.spark.sql.DataFrame  (lazy, builds a proto plan)
+      v
+SparkConnectClient --gRPC (HTTP/2)--> Spark Connect server --> Spark cluster
+      ^                                        |
+      +------ Apache Arrow record batches <----+
 ```
 
 A `DataFrame` is a thin builder over a `spark.connect.Relation` protobuf message.
@@ -115,6 +150,7 @@ request; results stream back as Arrow IPC batches that are decoded into `Row`s.
 
 - [Getting started](https://hyukjinkwon.github.io/spark-connect-scala3/getting-started/)
 - [User guide](https://hyukjinkwon.github.io/spark-connect-scala3/guide/sparksession/)
+- [Structured Streaming](https://hyukjinkwon.github.io/spark-connect-scala3/guide/streaming/)
 - [API reference (Scaladoc)](https://hyukjinkwon.github.io/spark-connect-scala3/api/)
 - [Examples](examples/)
 
@@ -135,12 +171,12 @@ Integration tests run against a live Spark Connect server; see
 
 - **Scala:** 3.3.x (LTS).
 - **JDK:** 17, 21.
-- **Spark Connect protocol:** Apache Spark **4.0.0** (works with 3.5.x servers for the
-  supported surface).
+- **Protocol:** targets the Spark Connect **4.1** protocol.
+- **Spark Connect servers:** Apache Spark **3.5 and above**.
 
 ## Contributing
 
-Contributions are very welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions are very welcome - see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

@@ -53,7 +53,7 @@ jobs:
     name: Integration tests (live Spark Connect server)
     runs-on: ubuntu-latest
     env:
-      SPARK_VERSION: 4.0.0
+      SPARK_VERSION: 4.1.2
       HADOOP_PROFILE: hadoop3
       SPARK_REMOTE: sc://localhost:15002
     steps:
@@ -89,9 +89,8 @@ jobs:
       - name: Start Spark Connect server
         run: |
           set -euo pipefail
-          ~/spark/sbin/start-connect-server.sh \
-            --packages "org.apache.spark:spark-connect_2.13:${SPARK_VERSION}" \
-            --conf spark.log.level=WARN
+          # Spark 4.0.0+ bundles the Spark Connect server, so no --packages is needed.
+          ~/spark/sbin/start-connect-server.sh --conf spark.log.level=WARN
           echo "Waiting for sc://localhost:15002 ..."
           for i in $(seq 1 60); do
             if (echo > /dev/tcp/localhost/15002) >/dev/null 2>&1; then

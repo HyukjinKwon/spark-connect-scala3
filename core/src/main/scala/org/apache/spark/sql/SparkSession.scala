@@ -84,6 +84,16 @@ class SparkSession private[sql] (
     while (responses.hasNext) responses.next()
   }
 
+  /** Execute a command and return all streamed responses (used by streaming and similar APIs). */
+  private[sql] def executeCommandResponses(
+      command: proto.Command
+  ): Seq[proto.ExecutePlanResponse] = {
+    val responses = client.execute(proto.Plan().withCommand(command))
+    val buf = scala.collection.mutable.ArrayBuffer.empty[proto.ExecutePlanResponse]
+    while (responses.hasNext) buf += responses.next()
+    buf.toSeq
+  }
+
   /**
    * Run an `AnalyzePlan` request. Callers set only the `analyze` oneof on `request`; identity
    * fields (session id, user context, client type) are injected by the client.
@@ -178,6 +188,30 @@ class SparkSession private[sql] (
 
   /** Returns the specified table/view as a [[DataFrame]]. */
   def table(tableName: String): DataFrame = read.table(tableName)
+
+  /** Returns a [[org.apache.spark.sql.streaming.DataStreamReader]] for reading streaming data. */
+  def readStream: org.apache.spark.sql.streaming.DataStreamReader =
+    new org.apache.spark.sql.streaming.DataStreamReader(this)
+
+  /** Returns a [[org.apache.spark.sql.streaming.StreamingQueryManager]] for this session. */
+  lazy val streams: org.apache.spark.sql.streaming.StreamingQueryManager =
+    new org.apache.spark.sql.streaming.StreamingQueryManager(this)
+
+  /**
+   * Creates a new Spark Declarative Pipeline (SDP) dataflow graph on the server. Register outputs
+   * and flows on the returned [[org.apache.spark.sql.pipelines.Pipeline]], then call `startRun()`.
+   */
+  def pipeline(
+      defaultCatalog: String = null,
+      defaultDatabase: String = null,
+      sqlConf: Map[String, String] = Map.empty
+  ): org.apache.spark.sql.pipelines.Pipeline =
+    new org.apache.spark.sql.pipelines.Pipeline(
+      this,
+      Option(defaultCatalog),
+      Option(defaultDatabase),
+      sqlConf
+    )
 
   /**
    * Returns a [[DataFrameReader]] that can be used to read non-streaming data in as a DataFrame.

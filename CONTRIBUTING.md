@@ -7,7 +7,7 @@ test, and submit changes.
 
 - **JDK 17 or 21**
 - **sbt** (`brew install sbt`, or see https://www.scala-sbt.org/)
-- For integration tests: a running **Spark Connect server** (Apache Spark 3.5+/4.0).
+- For integration tests: a running **Spark Connect server** (Apache Spark 3.5 and above).
 
 ## Project layout
 
@@ -28,7 +28,7 @@ the `.proto` files on every build via [ScalaPB](https://scalapb.github.io/).
 
 ```bash
 sbt compile            # generates proto stubs, then compiles all modules
-sbt test               # unit tests — these do NOT require a server
+sbt test               # unit tests - these do NOT require a server
 sbt scalafmtCheckAll   # verify formatting (CI enforces this)
 sbt scalafmtAll        # auto-format
 sbt doc                # generate Scaladoc
@@ -37,9 +37,9 @@ sbt doc                # generate Scaladoc
 ## Running a Spark Connect server locally
 
 ```bash
-# Apache Spark 4.0.0
-wget https://archive.apache.org/dist/spark/spark-4.0.0/spark-4.0.0-bin-hadoop3.tgz
-tar xzf spark-4.0.0-bin-hadoop3.tgz && cd spark-4.0.0-bin-hadoop3
+# Apache Spark 4.1.0
+wget https://archive.apache.org/dist/spark/spark-4.1.0/spark-4.1.0-bin-hadoop3.tgz
+tar xzf spark-4.1.0-bin-hadoop3.tgz && cd spark-4.1.0-bin-hadoop3
 ./sbin/start-connect-server.sh
 # server listens on sc://localhost:15002
 ```

@@ -112,6 +112,13 @@ final class DataFrameWriter[T] private[sql] (ds: Dataset[T]) {
   def orc(path: String): Unit = format("orc").save(path)
   def text(path: String): Unit = format("text").save(path)
 
+  /** Saves the content of the DataFrame to an external database table via JDBC. */
+  def jdbc(url: String, table: String, connectionProperties: java.util.Properties): Unit = {
+    import scala.jdk.CollectionConverters._
+    connectionProperties.asScala.foreach { case (k, v) => extraOptions(k) = v }
+    format("jdbc").option("url", url).option("dbtable", table).save()
+  }
+
   private def executeWrite(setSaveType: proto.WriteOperation => proto.WriteOperation): Unit = {
     var write = proto.WriteOperation(
       input = Some(ds.relation),

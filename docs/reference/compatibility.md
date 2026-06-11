@@ -1,7 +1,8 @@
-# Compatibility
+# Supported Features
 
-This page tracks what `spark-connect-scala3` supports today. The public API mirrors
-Apache Spark's Scala API, so familiar code generally ports unchanged.
+`spark-connect-scala3` implements the Spark Connect DataFrame, SQL, and Structured
+Streaming surface. The public API mirrors Apache Spark's Scala API, so familiar code
+ports unchanged.
 
 ## Platform
 
@@ -9,74 +10,92 @@ Apache Spark's Scala API, so familiar code generally ports unchanged.
 |---|---|
 | Scala | 3.3.x (LTS) |
 | JDK | 17, 21 |
-| Spark Connect protocol | Apache Spark **4.0.0** (compatible with 3.5.x servers for the supported surface) |
+| Protocol | Spark Connect **4.1** |
+| Spark Connect servers | Apache Spark **3.5 and above** |
 | Transport | gRPC over HTTP/2, optional TLS + bearer token |
 
-## API surface
+## SparkSession
 
-Legend: ✅ implemented · 🚧 partial · ⬜ planned
+- `builder().remote(...)`, `config`, `getOrCreate`
+- `sql(...)` and parameterised `sql(...)` (named and positional parameters)
+- `range(...)`
+- `table(...)`
+- `createDataFrame(rows, schema)`, `toDF`, `Seq(...).toDF(...)` via implicits
+- `conf.get` / `conf.set`, `version`, `stop`
+- `catalog`
+- `streams` (the `StreamingQueryManager`)
 
-### SparkSession
+## DataFrame / Dataset
 
-| Feature | Status |
-|---|---|
-| `builder().remote(...)`, `config`, `getOrCreate` | ✅ |
-| `sql(...)`, parameterised `sql(...)` | ✅ |
-| `range(...)` | ✅ |
-| `createDataFrame(rows, schema)`, `toDF` | ✅ |
-| `conf.get/set`, `version`, `stop` | ✅ |
-| `table(...)`, `catalog` | ✅ |
-| `udf` registration | ⬜ |
+- Projection: `select`, `selectExpr`, `withColumn`, `withColumns`, `withColumnRenamed`,
+  `drop`
+- Filtering: `filter` / `where`
+- Aggregation: `groupBy` / `agg`, `RelationalGroupedDataset`, `rollup`, `cube`, `pivot`
+- Ordering and limiting: `orderBy` / `sort`, `limit`, `offset`
+- De-duplication: `distinct`, `dropDuplicates`, `dropDuplicatesWithinWatermark`
+- Joins: inner / left / right / full outer / semi / anti / cross
+- Set operations: `union` / `unionByName`, `intersect`, `except`
+- Reshaping: `unpivot` / `melt`, `transpose`
+- Partitioning: `repartition`, `repartitionByRange`, `coalesce`
+- Sampling: `sample`, `randomSplit`
+- Null / stat helpers: `na` (`drop`, `fill`, `replace`), `stat` (`approxQuantile`,
+  `cov`, `corr`, `crosstab`, `freqItems`, `sampleBy`), `describe`, `summary`
+- Hints, watermarks, observations
+- Actions: `collect`, `collectAsList`, `count`, `take`, `head`, `first`, `show`,
+  `isEmpty`, `toLocalIterator`, `foreach`, `foreachPartition`
+- Inspection: `printSchema`, `schema`, `columns`, `dtypes`, `explain`
+- Typed `Dataset[T]` with case-class encoders
 
-### DataFrame / Dataset
+## Column & functions
 
-| Feature | Status |
-|---|---|
-| `select`, `selectExpr`, `filter`/`where`, `withColumn`, `withColumnRenamed`, `drop` | ✅ |
-| `groupBy`/`agg`, `RelationalGroupedDataset`, `pivot` | ✅ |
-| `orderBy`/`sort`, `limit`, `distinct`, `dropDuplicates` | ✅ |
-| `join` (inner/left/right/outer/semi/anti/cross) | ✅ |
-| `union`/`unionByName`, `intersect`, `except` | ✅ |
-| `repartition`, `coalesce`, `sample`, `na` | ✅ |
-| Actions: `collect`, `collectAsList`, `count`, `take`, `head`, `first`, `show`, `isEmpty`, `toLocalIterator` | ✅ |
-| `printSchema`, `schema`, `columns`, `explain` | ✅ |
-| Typed `Dataset[T]` (encoders for case classes) | 🚧 |
+- Expression DSL: arithmetic, comparison, boolean, null checks, `isin`, `like`,
+  `rlike`, `between`, `cast`, alias, sort order, `getItem`, `getField`, struct / array /
+  map access
+- `when` / `otherwise`, `lit`, `expr`, `col`
+- The `functions` object: 400+ aggregate, math, string, date/time, collection,
+  conditional, and window functions
+- Window functions via `Window` and `.over(spec)`
 
-### Column & functions
+## Data sources
 
-| Feature | Status |
-|---|---|
-| Expression DSL (arithmetic, comparison, boolean, null, `isin`, `like`, `between`, `cast`, alias, sort order) | ✅ |
-| `when`/`otherwise`, `lit`, `expr`, `col` | ✅ |
-| Aggregate / math / string / date-time / collection functions | ✅ |
-| Window functions (`Window`, `over`) | ✅ |
-| `getItem`, `getField`, struct/array/map access | ✅ |
+- `read` / `write` for csv, json, parquet, orc, text, jdbc, and `table`
+- `option(s)`, `schema`, `mode`, `format`
+- `partitionBy`, `bucketBy`, `sortBy`
+- `saveAsTable`, `insertInto`
+- `DataFrameWriterV2` (`writeTo(...)`)
 
-### Data sources
+## Catalog
 
-| Feature | Status |
-|---|---|
-| `read`/`write` parquet, json, csv, orc, text | ✅ |
-| `option(s)`, `schema`, `mode`, `partitionBy` | ✅ |
-| `saveAsTable`, `insertInto`, `table` | ✅ |
-| Streaming (`readStream`/`writeStream`) | ⬜ |
+- Databases, tables, columns, and functions listing
+- `currentDatabase` / `setCurrentDatabase`, `tableExists`, `functionExists`
+- Temp and global temp views
+- Caching: `cacheTable`, `uncacheTable`, `clearCache`, `isCached`
 
-### Types
+## Structured Streaming
 
-| Feature | Status |
-|---|---|
-| Full `org.apache.spark.sql.types` hierarchy | ✅ |
-| Protobuf ↔ `DataType` round-trip | ✅ |
-| `StructType.fromDDL`, `DataTypes` factories | ✅ |
+- `readStream` / `writeStream`
+- Triggers: processing-time, once, available-now, continuous
+- Output modes: append, complete, update
+- Watermarks
+- `StreamingQuery` (status, progress, `awaitTermination`, `stop`, ...)
+- `StreamingQueryManager` (`active`, `get`, `awaitAnyTermination`, `resetTerminated`)
 
-## Known limitations
+See the [Structured Streaming guide](../guide/streaming.md).
 
-- Typed `Dataset[T]` (arbitrary case-class encoders) is in progress; use `DataFrame`
-  + `Row` for now.
-- UDFs and ML (`spark.ml`) are not yet exposed.
-- Structured Streaming is planned but not yet implemented.
+## Types
 
-!!! note
-    This matrix evolves with each release. The
-    [Scaladoc](https://hyukjinkwon.github.io/spark-connect-scala3/api/) is the
-    authoritative list of available methods for a given version.
+- The full `org.apache.spark.sql.types` hierarchy
+- Protobuf <-> `DataType` round-trip
+- `StructType.fromDDL`, `DataTypes` factories
+
+## Not supported
+
+Two parts of the Spark API require shipping user JVM closures to the server, which the
+Spark Connect protocol does not transport, so they are out of scope:
+
+- User-defined functions (UDFs / UDAFs / UDTFs).
+- The `foreach` / `foreachBatch` sinks in Structured Streaming.
+
+Everything else in the Spark Connect surface is implemented. The
+[Scaladoc](https://hyukjinkwon.github.io/spark-connect-scala3/api/) documents every
+method and signature for a given release.

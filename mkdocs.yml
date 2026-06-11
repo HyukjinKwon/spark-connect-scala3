@@ -5,21 +5,25 @@ site_url: https://hyukjinkwon.github.io/spark-connect-scala3/
 repo_name: HyukjinKwon/spark-connect-scala3
 repo_url: https://github.com/HyukjinKwon/spark-connect-scala3
 edit_uri: edit/main/docs/
-copyright: Copyright &copy; 2026 Hyukjin Kwon — Apache License 2.0
+copyright: Copyright &copy; 2026 Hyukjin Kwon - Apache License 2.0
 
 theme:
   name: material
   features:
     - navigation.instant
     - navigation.tracking
+    - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
     - navigation.top
+    - navigation.indexes
     - navigation.footer
     - content.code.copy
     - content.code.annotate
     - content.tabs.link
     - search.suggest
     - search.highlight
+    - search.share
     - toc.follow
   palette:
     - media: "(prefers-color-scheme: light)"
@@ -38,6 +42,9 @@ theme:
         name: Switch to light mode
   icon:
     repo: fontawesome/brands/github
+  font:
+    text: Roboto
+    code: Roboto Mono
 
 plugins:
   - search
@@ -58,14 +65,15 @@ markdown_extensions:
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - tables
 
 extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/HyukjinKwon/spark-connect-scala3
-  version:
-    provider: mike
 
 nav:
   - Home: index.md
@@ -74,12 +82,15 @@ nav:
       - SparkSession: guide/sparksession.md
       - DataFrame & Dataset: guide/dataframe.md
       - Columns & Functions: guide/columns-and-functions.md
+      - Aggregations & Windows: guide/aggregations-and-windows.md
       - Reading & Writing Data: guide/io.md
       - Running SQL: guide/sql.md
+      - Catalog: guide/catalog.md
+      - Structured Streaming: guide/streaming.md
       - Data Types & Schemas: guide/types.md
   - Reference:
       - Architecture: reference/architecture.md
-      - Compatibility: reference/compatibility.md
+      - Supported Features: reference/compatibility.md
       - Configuration: reference/configuration.md
   - Examples: examples.md
   - API Reference (Scaladoc): https://hyukjinkwon.github.io/spark-connect-scala3/api/

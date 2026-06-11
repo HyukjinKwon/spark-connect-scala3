@@ -66,19 +66,41 @@ class RelationalGroupedDataset private[sql] (
     aggregate(Seq(Column.fn("count", functions.lit(1)).as("count")))
 
   private def aggOverCols(colNames: Seq[String], fnName: String): DataFrame = {
-    val cols = if (colNames.isEmpty) numericOrAll else colNames
+    val cols = if (colNames.isEmpty) numericColumns else colNames
     aggregate(cols.map(c => Column.fn(fnName, functions.col(c))))
   }
 
-  // When no columns are given, Spark aggregates over all (numeric) columns. We cannot know the
-  // numeric columns without a schema round-trip, so we fall back to all named columns.
-  private def numericOrAll: Seq[String] = df.columns.toSeq
+  // When no columns are given, Spark aggregates over all numeric columns. We resolve the schema
+  // from the server and keep only numeric (and grouping-excluded) columns, matching Spark.
+  private def numericColumns: Seq[String] = {
+    import org.apache.spark.sql.types.*
+    def isNumeric(dt: DataType): Boolean = dt match {
+      case ByteType | ShortType | IntegerType | LongType | FloatType | DoubleType => true
+      case _: DecimalType => true
+      case _ => false
+    }
+    df.schema.fields.collect { case f if isNumeric(f.dataType) => f.name }.toSeq
+  }
 
   def mean(colNames: String*): DataFrame = aggOverCols(colNames, "avg")
   def avg(colNames: String*): DataFrame = aggOverCols(colNames, "avg")
   def max(colNames: String*): DataFrame = aggOverCols(colNames, "max")
   def min(colNames: String*): DataFrame = aggOverCols(colNames, "min")
   def sum(colNames: String*): DataFrame = aggOverCols(colNames, "sum")
+
+  /** Sample standard deviation of each numeric column (alias for `stddev_samp`). */
+  def std(colNames: String*): DataFrame = aggOverCols(colNames, "stddev")
+  def stddev(colNames: String*): DataFrame = aggOverCols(colNames, "stddev")
+  def stddev_samp(colNames: String*): DataFrame = aggOverCols(colNames, "stddev_samp")
+  def stddev_pop(colNames: String*): DataFrame = aggOverCols(colNames, "stddev_pop")
+
+  /** Sample variance of each numeric column (alias for `var_samp`). */
+  def variance(colNames: String*): DataFrame = aggOverCols(colNames, "variance")
+  def var_samp(colNames: String*): DataFrame = aggOverCols(colNames, "var_samp")
+  def var_pop(colNames: String*): DataFrame = aggOverCols(colNames, "var_pop")
+
+  def skewness(colNames: String*): DataFrame = aggOverCols(colNames, "skewness")
+  def kurtosis(colNames: String*): DataFrame = aggOverCols(colNames, "kurtosis")
 
   /** Pivots a column of the current DataFrame and performs the specified aggregation. */
   def pivot(pivotColumn: String): RelationalGroupedDataset = pivot(functions.col(pivotColumn))

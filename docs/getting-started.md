@@ -5,8 +5,11 @@ This guide takes you from zero to a running query in a few minutes.
 ## 1. Requirements
 
 - **JDK 17 or 21**
-- **Scala 3.3.x** (LTS) — via sbt, Mill, or scala-cli
-- A reachable **Spark Connect server** (Apache Spark 3.5+ / 4.0)
+- **Scala 3.3.x** (LTS) - via sbt, Mill, or scala-cli
+- A reachable **Spark Connect server** (Apache Spark 3.5 and above)
+
+The client targets the Spark Connect 4.1 protocol and works with Apache Spark 3.5 and
+above.
 
 ## 2. Add the dependency
 
@@ -33,14 +36,21 @@ This guide takes you from zero to a running query in a few minutes.
 If you don't already have a server, download Apache Spark and start one locally:
 
 ```bash
-curl -fsSL https://archive.apache.org/dist/spark/spark-4.0.0/spark-4.0.0-bin-hadoop3.tgz \
+curl -fsSL https://archive.apache.org/dist/spark/spark-4.1.0/spark-4.1.0-bin-hadoop3.tgz \
   | tar xz
-cd spark-4.0.0-bin-hadoop3
+cd spark-4.1.0-bin-hadoop3
 ./sbin/start-connect-server.sh
 ```
 
-The server listens on `sc://localhost:15002` by default. Stop it later with
-`./sbin/stop-connect-server.sh`.
+Spark 4.0.0 and later bundle the Connect server, so no `--packages` flag is required.
+The server listens on `sc://localhost:15002` by default; pass
+`--conf spark.connect.grpc.binding.port=15002` to set the port explicitly. Stop it later
+with `./sbin/stop-connect-server.sh`.
+
+!!! note "Spark 3.5.x"
+    Only Spark 3.5.x needs the server added explicitly, with
+    `--packages org.apache.spark:spark-connect_2.13:3.5.x`. From Spark 4.0.0 onward it is
+    bundled.
 
 !!! tip "Already have a cluster?"
     Point `remote(...)` at any Spark Connect endpoint, e.g.
@@ -95,11 +105,11 @@ import org.apache.spark.sql.functions.*
     scala-cli run hello.scala
     ```
 
-That's it — you're driving a Spark cluster from Scala 3.
+That's it - you're driving a Spark cluster from Scala 3.
 
 ## Where to go next
 
-- [SparkSession](guide/sparksession.md) — building and configuring the session.
-- [DataFrame & Dataset](guide/dataframe.md) — the transformation and action API.
-- [Columns & Functions](guide/columns-and-functions.md) — the expression DSL.
-- [Examples](examples.md) — complete, runnable programs.
+- [SparkSession](guide/sparksession.md) - building and configuring the session.
+- [DataFrame & Dataset](guide/dataframe.md) - the transformation and action API.
+- [Columns & Functions](guide/columns-and-functions.md) - the expression DSL.
+- [Examples](examples.md) - complete, runnable programs.

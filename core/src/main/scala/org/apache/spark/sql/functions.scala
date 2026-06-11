@@ -265,7 +265,10 @@ object functions {
   def isnull(e: Column): Column = fn("isnull", e)
   def least(exprs: Column*): Column = fn("least", exprs: _*)
   def map(cols: Column*): Column = fn("map", cols: _*)
+  def create_map(cols: Column*): Column = fn("map", cols: _*)
   def map_concat(cols: Column*): Column = fn("map_concat", cols: _*)
+  def map_contains_key(column: Column, key: Any): Column =
+    fn("map_contains_key", column, lit(key))
   def map_entries(e: Column): Column = fn("map_entries", e)
   def map_from_arrays(keys: Column, values: Column): Column = fn("map_from_arrays", keys, values)
   def map_from_entries(e: Column): Column = fn("map_from_entries", e)
@@ -473,6 +476,7 @@ object functions {
     fn("regexp_replace", e, pattern, replacement)
   def regexp_like(str: Column, regexp: Column): Column = fn("regexp_like", str, regexp)
   def regexp_instr(str: Column, regexp: Column): Column = fn("regexp_instr", str, regexp)
+  def regexp_substr(str: Column, regexp: Column): Column = fn("regexp_substr", str, regexp)
   def repeat(str: Column, n: Int): Column = fn("repeat", str, lit(n))
   def replace(src: Column, search: Column): Column = fn("replace", src, search)
   def replace(src: Column, search: Column, replace: Column): Column =

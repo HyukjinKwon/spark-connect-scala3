@@ -1,6 +1,6 @@
 # Reading & Writing Data
 
-I/O happens **on the server** — paths are resolved relative to the cluster's file
+I/O happens **on the server** - paths are resolved relative to the cluster's file
 systems, not your local machine.
 
 ## Reading
@@ -20,6 +20,16 @@ spark.read
   .option("header", "true")
   .option("inferSchema", "true")
   .csv("/data/people.csv")
+
+// JDBC
+spark.read
+  .format("jdbc")
+  .option("url", "jdbc:postgresql://db:5432/app")
+  .option("dbtable", "public.users")
+  .load()
+
+// a catalog table
+spark.read.table("db.events")
 ```
 
 Provide an explicit schema to avoid inference:
@@ -62,6 +72,11 @@ df.write
   .partitionBy("year", "month")
   .mode("overwrite")
   .parquet("/data/partitioned")
+
+df.write
+  .bucketBy(8, "id")
+  .sortBy("ts")
+  .saveAsTable("db.bucketed")
 ```
 
 ### Saving to tables
@@ -71,9 +86,20 @@ df.write.saveAsTable("db.events")
 df.write.mode("append").insertInto("db.events")
 ```
 
+### DataFrameWriterV2
+
+The v2 writer API gives finer control over table creation and updates:
+
+```scala
+df.writeTo("db.events").create()
+df.writeTo("db.events").append()
+df.writeTo("db.events").partitionedBy($"year").createOrReplace()
+df.writeTo("db.events").overwritePartitions()
+```
+
 ## The Catalog
 
-Inspect and manage metadata through `spark.catalog`:
+Inspect and manage table metadata through `spark.catalog`:
 
 ```scala
 spark.catalog.listDatabases().show()
@@ -83,6 +109,8 @@ spark.catalog.currentDatabase
 spark.catalog.setCurrentDatabase("analytics")
 spark.catalog.dropTempView("v")
 ```
+
+See the [Catalog guide](catalog.md) for the full metadata, cache, and temp-view API.
 
 !!! warning "Server-side paths"
     `load`/`save` paths and table locations are interpreted by the Spark Connect

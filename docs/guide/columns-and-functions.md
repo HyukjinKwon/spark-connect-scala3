@@ -55,8 +55,9 @@ lit(Array(1, 2, 3))
 
 ## The `functions` object
 
-`org.apache.spark.sql.functions` mirrors Apache Spark's static function set. A
-representative (non-exhaustive) sample:
+`org.apache.spark.sql.functions` mirrors Apache Spark's static function set - over 400
+aggregate, math, string, date/time, collection, conditional, and window functions. A
+representative sample:
 
 === "Aggregate"
 
@@ -119,6 +120,5 @@ df.select(
 `lead`, `lag`, plus aggregates).
 
 !!! note "Full list"
-    The [Compatibility](../reference/compatibility.md) page tracks exactly which
-    functions are implemented. The [Scaladoc](https://hyukjinkwon.github.io/spark-connect-scala3/api/)
-    documents each signature.
+    The [Scaladoc](https://hyukjinkwon.github.io/spark-connect-scala3/api/) documents
+    every function and its signature.

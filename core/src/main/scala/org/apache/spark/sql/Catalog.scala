@@ -17,6 +17,8 @@
 package org.apache.spark.sql
 
 import org.apache.spark.connect.proto
+import org.apache.spark.sql.connect.client.DataTypeProtoConverter
+import org.apache.spark.sql.types.StructType
 
 /**
  * Catalog interface for Spark, backed by the Spark Connect `Catalog` relations. Mirrors
@@ -114,6 +116,60 @@ class Catalog private[sql] (sparkSession: SparkSession) {
 
   def refreshByPath(path: String): Unit =
     run(catalog(_.withRefreshByPath(proto.RefreshByPath(path = path))))
+
+  // --- table creation ---
+
+  /** Creates a table from the given path and returns the corresponding [[DataFrame]]. */
+  def createTable(tableName: String, path: String): DataFrame =
+    catalog(_.withCreateTable(proto.CreateTable(tableName = tableName, path = Some(path))))
+
+  /** Creates a table from the given path and source. */
+  def createTable(tableName: String, path: String, source: String): DataFrame =
+    catalog(
+      _.withCreateTable(
+        proto.CreateTable(tableName = tableName, path = Some(path), source = Some(source))
+      )
+    )
+
+  /** Creates a table from the given source and options. */
+  def createTable(tableName: String, source: String, options: Map[String, String]): DataFrame =
+    catalog(
+      _.withCreateTable(
+        proto.CreateTable(tableName = tableName, source = Some(source), options = options)
+      )
+    )
+
+  /** Creates a table from the given source, schema, and options. */
+  def createTable(
+      tableName: String,
+      source: String,
+      schema: StructType,
+      options: Map[String, String]
+  ): DataFrame =
+    catalog(
+      _.withCreateTable(
+        proto.CreateTable(
+          tableName = tableName,
+          source = Some(source),
+          schema = Some(DataTypeProtoConverter.toConnectProtoType(schema)),
+          options = options
+        )
+      )
+    )
+
+  /** Creates an external table from the given path. */
+  def createExternalTable(tableName: String, path: String): DataFrame =
+    catalog(
+      _.withCreateExternalTable(proto.CreateExternalTable(tableName = tableName, path = Some(path)))
+    )
+
+  /** Creates an external table from the given path and source. */
+  def createExternalTable(tableName: String, path: String, source: String): DataFrame =
+    catalog(
+      _.withCreateExternalTable(
+        proto.CreateExternalTable(tableName = tableName, path = Some(path), source = Some(source))
+      )
+    )
 
   // --- internals ---
 

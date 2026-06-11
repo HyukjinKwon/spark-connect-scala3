@@ -18,8 +18,8 @@ sbt doc                # Scaladoc
 ## Run a local server
 
 ```bash
-curl -fsSL https://archive.apache.org/dist/spark/spark-4.0.0/spark-4.0.0-bin-hadoop3.tgz | tar xz
-cd spark-4.0.0-bin-hadoop3
+curl -fsSL https://archive.apache.org/dist/spark/spark-4.1.0/spark-4.1.0-bin-hadoop3.tgz | tar xz
+cd spark-4.1.0-bin-hadoop3
 ./sbin/start-connect-server.sh        # sc://localhost:15002
 ```
 

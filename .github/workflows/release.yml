@@ -10,6 +10,10 @@ name: Release
 #   PGP_SECRET             base64-encoded ASCII-armored secret key
 #                          (gpg --armor --export-secret-keys KEY | base64 -w0)
 #   PGP_PASSPHRASE         passphrase for the secret key
+#
+# When the secrets are not configured (for example on a fresh fork or before the
+# maintainer sets up Maven Central), the publish step is skipped and the job
+# succeeds, so the Release workflow never shows a spurious red status.
 
 on:
   push:
@@ -37,7 +41,20 @@ jobs:
       - name: Set up sbt
         uses: sbt/setup-sbt@v1
 
+      - name: Check for publishing credentials
+        id: creds
+        env:
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+        run: |
+          if [ -n "${SONATYPE_USERNAME:-}" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "No SONATYPE_USERNAME secret configured; skipping publish."
+          fi
+
       - name: Publish
+        if: steps.creds.outputs.ready == 'true'
         run: sbt ci-release
         env:
           SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}

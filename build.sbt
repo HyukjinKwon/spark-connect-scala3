@@ -63,7 +63,7 @@ lazy val commonSettings = Seq(
 // ---------------------------------------------------------------------------
 
 // proto: ScalaPB-generated message + gRPC stubs from the vendored Spark Connect
-// protocol definitions. Pinned to the Apache Spark 4.0.0 protocol.
+// protocol definitions. Pinned to the Apache Spark 4.1.0 (Spark Connect 4.1) protocol.
 lazy val proto = (project in file("modules/proto"))
   .settings(commonSettings)
   .settings(
@@ -78,7 +78,7 @@ lazy val proto = (project in file("modules/proto"))
     ),
     // flatPackage=true emits all messages flat into the java_package
     // (org.apache.spark.connect.proto) so `proto.DataType`, `proto.Relation`,
-    // `proto.Plan` resolve exactly like the upstream Spark Connect client —
+    // `proto.Plan` resolve exactly like the upstream Spark Connect client -
     // instead of per-file subpackages (proto.types.DataType, ...).
     Compile / PB.targets := Seq(
       scalapb.gen(grpc = true, flatPackage = true) -> (Compile / sourceManaged).value / "scalapb"

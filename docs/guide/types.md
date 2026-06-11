@@ -21,9 +21,9 @@ protobuf representation.
 | `DateType` | `DATE` | `java.sql.Date` |
 | `TimestampType` | `TIMESTAMP` | `java.sql.Timestamp` |
 | `TimestampNTZType` | `TIMESTAMP_NTZ` | `java.time.LocalDateTime` |
-| `ArrayType(elem, …)` | `ARRAY<…>` | `scala.Seq` |
-| `MapType(k, v, …)` | `MAP<…>` | `scala.Map` |
-| `StructType(fields)` | `STRUCT<…>` | `Row` |
+| `ArrayType(elem, ...)` | `ARRAY<...>` | `scala.Seq` |
+| `MapType(k, v, ...)` | `MAP<...>` | `scala.Map` |
+| `StructType(fields)` | `STRUCT<...>` | `Row` |
 
 Also available: `NullType`, `CharType(n)`, `VarcharType(n)`,
 `YearMonthIntervalType`, `DayTimeIntervalType`, `VariantType`.
