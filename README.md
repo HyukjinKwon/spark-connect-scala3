@@ -122,6 +122,11 @@ Also out of scope because they are not part of the Spark Connect protocol at all
 Class and method names otherwise match Apache Spark's Scala API, so existing Spark
 Scala code ports almost verbatim.
 
+The untyped `DataFrame` surface is complete. The typed `Dataset[T]` / `Encoder`
+API (`as[T]`, `groupByKey`, typed `map`/aggregators) and a few niche APIs are
+not implemented yet. See [API coverage](https://hyukjinkwon.github.io/spark-connect-scala3/api-coverage/)
+for the exact breakdown of what is and is not supported.
+
 ## Documentation
 
 Full documentation, including guides for every part of the API and the generated Scaladoc, lives at **<https://hyukjinkwon.github.io/spark-connect-scala3/>**.

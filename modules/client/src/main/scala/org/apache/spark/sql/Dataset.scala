@@ -435,18 +435,20 @@ class Dataset[T] private[sql] (
     show(numRows, if (truncate) 20 else 0, vertical = false)
   def show(numRows: Int, truncate: Int): Unit = show(numRows, truncate, vertical = false)
   def show(numRows: Int, truncate: Int, vertical: Boolean): Unit = {
-    val rel = sparkSession.newRelation(
-      RelType.ShowString(
-        proto.ShowString(
-          input = Some(relation),
-          numRows = numRows,
-          truncate = truncate,
-          vertical = vertical
-        )
+    // Render client-side from collected rows so that show() is deterministic and exactly
+    // consistent with collect(). The server-side ShowString relation can return a
+    // partially-rendered table for some plans (e.g. aggregations), so we do not rely on it.
+    val n = math.max(numRows, 0)
+    val result = sparkSession.execute(limit(n + 1).plan)
+    print(
+      org.apache.spark.sql.connect.client.ShowString(
+        result.toArray.toSeq,
+        result.schema,
+        n,
+        truncate,
+        vertical
       )
     )
-    val rows = sparkSession.execute(proto.Plan(proto.Plan.OpType.Root(rel))).toArray
-    if (rows.nonEmpty) print(rows.head.getString(0))
   }
 
   // -- Explain ---------------------------------------------------------------

@@ -162,6 +162,18 @@ class DataFrameReader private[sql] (sparkSession: SparkSession) {
   def text(paths: String*): DataFrame = format("text").load(paths: _*)
 
   /**
+   * Loads text file(s), returning each line as a row in a single-column (`value`) [[DataFrame]].
+   *
+   * Apache Spark's `textFile` returns a `Dataset[String]`; this client is untyped (closures and
+   * custom encoders are not transported over Spark Connect), so the equivalent single-string-column
+   * [[DataFrame]] is returned instead.
+   */
+  def textFile(paths: String*): DataFrame = text(paths: _*)
+
+  /** Loads XML file(s) and returns the result as a [[DataFrame]]. */
+  def xml(paths: String*): DataFrame = format("xml").load(paths: _*)
+
+  /**
    * Constructs a [[DataFrame]] representing the database table accessible via JDBC.
    *
    * @param url
