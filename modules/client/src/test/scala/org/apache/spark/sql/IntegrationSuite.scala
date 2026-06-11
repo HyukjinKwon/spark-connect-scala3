@@ -185,6 +185,8 @@ class IntegrationSuite extends munit.FunSuite {
   }
 
   test("observe collects named metrics") {
+    // Observed metrics are only delivered over Spark Connect from Spark 4.0 onward.
+    assume(atLeastSpark(4, 0), "Observed metrics over Spark Connect require Spark 4.0 or newer")
     val obs = new Observation("it_metrics")
     spark.range(10).observe(obs, count(lit(1)).as("cnt"), sum("id").as("total")).collect()
     val metrics = obs.get
