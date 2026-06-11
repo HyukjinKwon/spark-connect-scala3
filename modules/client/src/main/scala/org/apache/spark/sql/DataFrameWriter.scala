@@ -52,6 +52,14 @@ class DataFrameWriter private[sql] (ds: Dataset) {
    * @return
    *   this writer, for chaining.
    */
+  /** Specifies the behavior when data or table already exists, using a [[SaveMode]]. */
+  def mode(saveMode: SaveMode): DataFrameWriter = mode(saveMode match {
+    case SaveMode.Append => "append"
+    case SaveMode.Overwrite => "overwrite"
+    case SaveMode.ErrorIfExists => "errorifexists"
+    case SaveMode.Ignore => "ignore"
+  })
+
   def mode(saveMode: String): DataFrameWriter = {
     this.saveMode = saveMode.toLowerCase match {
       case "append" => proto.WriteOperation.SaveMode.SAVE_MODE_APPEND

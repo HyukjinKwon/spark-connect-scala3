@@ -56,6 +56,9 @@ class SparkSession private[sql] (private[sql] val client: SparkConnectClient)
   /** Runtime configuration for Spark. */
   lazy val conf: RuntimeConfig = new RuntimeConfig(client)
 
+  /** Implicit conversions (`$"col"`, `Seq(...).toDF(...)`); use `import spark.implicits.*`. */
+  object implicits extends SQLImplicits(this)
+
   // -- Plan plumbing (used by Dataset / functions) ---------------------------
 
   private[sql] def nextPlanId(): Long = planIdGenerator.getAndIncrement()

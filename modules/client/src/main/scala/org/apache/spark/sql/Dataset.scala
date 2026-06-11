@@ -501,6 +501,221 @@ class Dataset private[sql] (
   def sameSemantics(other: Dataset): Boolean =
     sparkSession.client.sameSemantics(plan, other.plan)
   def semanticHash(): Int = sparkSession.client.semanticHash(plan)
+
+  // -- Additional relational transformations ---------------------------------
+
+  /** Range-partitions by the given expressions into `numPartitions`. */
+  def repartitionByRange(numPartitions: Int, partitionExprs: Column*): DataFrame =
+    withInput(
+      RelType.RepartitionByExpression(
+        proto.RepartitionByExpression(
+          input = Some(relation),
+          partitionExprs = partitionExprs.map(c =>
+            proto.Expression(exprType = proto.Expression.ExprType.SortOrder(Dataset.toSortOrder(c)))
+          ),
+          numPartitions = Some(numPartitions)
+        )
+      )
+    )
+
+  /** Range-partitions by the given expressions. */
+  def repartitionByRange(partitionExprs: Column*): DataFrame =
+    withInput(
+      RelType.RepartitionByExpression(
+        proto.RepartitionByExpression(
+          input = Some(relation),
+          partitionExprs = partitionExprs.map(c =>
+            proto.Expression(exprType = proto.Expression.ExprType.SortOrder(Dataset.toSortOrder(c)))
+          )
+        )
+      )
+    )
+
+  /** Unpivots (melts) a DataFrame from wide to long format. */
+  def unpivot(
+      ids: Array[Column],
+      values: Array[Column],
+      variableColumnName: String,
+      valueColumnName: String
+  ): DataFrame =
+    withInput(
+      RelType.Unpivot(
+        proto.Unpivot(
+          input = Some(relation),
+          ids = ids.toSeq.map(_.expr),
+          values = Some(proto.Unpivot.Values(values = values.toSeq.map(_.expr))),
+          variableColumnName = variableColumnName,
+          valueColumnName = valueColumnName
+        )
+      )
+    )
+
+  /** Unpivots, inferring the value columns from those not in `ids`. */
+  def unpivot(ids: Array[Column], variableColumnName: String, valueColumnName: String): DataFrame =
+    withInput(
+      RelType.Unpivot(
+        proto.Unpivot(
+          input = Some(relation),
+          ids = ids.toSeq.map(_.expr),
+          variableColumnName = variableColumnName,
+          valueColumnName = valueColumnName
+        )
+      )
+    )
+
+  /** Alias for [[unpivot]]. */
+  def melt(
+      ids: Array[Column],
+      values: Array[Column],
+      variableColumnName: String,
+      valueColumnName: String
+  ): DataFrame =
+    unpivot(ids, values, variableColumnName, valueColumnName)
+
+  /** Alias for [[unpivot]]. */
+  def melt(ids: Array[Column], variableColumnName: String, valueColumnName: String): DataFrame =
+    unpivot(ids, variableColumnName, valueColumnName)
+
+  /** Transposes the DataFrame, turning the first column into the new column names. */
+  def transpose(): DataFrame =
+    withInput(RelType.Transpose(proto.Transpose(input = Some(relation))))
+
+  /** Transposes the DataFrame using `indexColumn` for the new column names. */
+  def transpose(indexColumn: Column): DataFrame =
+    withInput(
+      RelType.Transpose(
+        proto.Transpose(input = Some(relation), indexColumns = Seq(indexColumn.expr))
+      )
+    )
+
+  /** Defines an event-time watermark for this streaming Dataset. */
+  def withWatermark(eventTime: String, delayThreshold: String): DataFrame =
+    withInput(
+      RelType.WithWatermark(
+        proto.WithWatermark(
+          input = Some(relation),
+          eventTime = eventTime,
+          delayThreshold = delayThreshold
+        )
+      )
+    )
+
+  /** Returns the content as a DataFrame of JSON strings in a single `value` column. */
+  def toJSON: DataFrame =
+    withInput(
+      RelType.Project(
+        proto.Project(
+          input = Some(relation),
+          expressions = Seq(functions.expr("to_json(struct(*))").as("value").expr)
+        )
+      )
+    )
+
+  /** Randomly splits this Dataset with the given weights and a fixed seed. */
+  def randomSplit(weights: Array[Double], seed: Long): Array[DataFrame] = {
+    require(weights.forall(_ >= 0), "Weights must be nonnegative")
+    val sum = weights.sum
+    require(sum > 0, "Sum of weights must be positive")
+    val bounds = weights.scanLeft(0.0)((acc, w) => acc + w / sum)
+    weights.indices.map { i =>
+      withInput(
+        RelType.Sample(
+          proto.Sample(
+            input = Some(relation),
+            lowerBound = bounds(i),
+            upperBound = bounds(i + 1),
+            withReplacement = Some(false),
+            seed = Some(seed),
+            deterministicOrder = true
+          )
+        )
+      )
+    }.toArray
+  }
+
+  /** Randomly splits this Dataset with the given weights. */
+  def randomSplit(weights: Array[Double]): Array[DataFrame] =
+    randomSplit(weights, scala.util.Random.nextLong())
+
+  /** Eagerly checkpoints this Dataset to reliable storage and returns the checkpointed copy. */
+  def checkpoint(): DataFrame = checkpoint(eager = true, reliableCheckpoint = true)
+
+  /** Checkpoints this Dataset to reliable storage. */
+  def checkpoint(eager: Boolean): DataFrame = checkpoint(eager, reliableCheckpoint = true)
+
+  /** Eagerly locally checkpoints this Dataset. */
+  def localCheckpoint(): DataFrame = checkpoint(eager = true, reliableCheckpoint = false)
+
+  /** Locally checkpoints this Dataset. */
+  def localCheckpoint(eager: Boolean): DataFrame = checkpoint(eager, reliableCheckpoint = false)
+
+  private def checkpoint(eager: Boolean, reliableCheckpoint: Boolean): DataFrame = {
+    val command = proto.Command(commandType =
+      proto.Command.CommandType.CheckpointCommand(
+        proto.CheckpointCommand(
+          relation = Some(relation),
+          local = !reliableCheckpoint,
+          eager = eager
+        )
+      )
+    )
+    val responses =
+      sparkSession.client.execute(proto.Plan(proto.Plan.OpType.Command(command))).toList
+    val cached = responses
+      .find(_.responseType.isCheckpointCommandResult)
+      .map(_.getCheckpointCommandResult.getRelation)
+      .getOrElse(throw new RuntimeException("CheckpointCommandResult missing from server response"))
+    sparkSession.newDataFrame(RelType.CachedRemoteRelation(cached))
+  }
+
+  // -- Persistence -----------------------------------------------------------
+
+  /** Persists this Dataset with the default storage level (`MEMORY_AND_DISK`). */
+  def persist(): this.type = persist(org.apache.spark.storage.StorageLevel.MEMORY_AND_DISK)
+
+  /** Persists this Dataset with the given storage level. */
+  def persist(newLevel: org.apache.spark.storage.StorageLevel): this.type = {
+    sparkSession.client.analyze(
+      proto.AnalyzePlanRequest.Analyze.Persist(
+        proto.AnalyzePlanRequest
+          .Persist(relation = Some(relation), storageLevel = Some(newLevel.toProto))
+      )
+    )
+    this
+  }
+
+  /** Persists this Dataset with the default storage level. */
+  def cache(): this.type = persist()
+
+  /** Marks this Dataset as non-persistent. */
+  def unpersist(blocking: Boolean): this.type = {
+    sparkSession.client.analyze(
+      proto.AnalyzePlanRequest.Analyze.Unpersist(
+        proto.AnalyzePlanRequest.Unpersist(relation = Some(relation), blocking = Some(blocking))
+      )
+    )
+    this
+  }
+
+  /** Marks this Dataset as non-persistent. */
+  def unpersist(): this.type = unpersist(blocking = false)
+
+  /** Returns the current storage level of this Dataset. */
+  def storageLevel: org.apache.spark.storage.StorageLevel =
+    org.apache.spark.storage.StorageLevel.fromProto(
+      sparkSession.client
+        .analyze(
+          proto.AnalyzePlanRequest.Analyze
+            .GetStorageLevel(proto.AnalyzePlanRequest.GetStorageLevel(relation = Some(relation)))
+        )
+        .getGetStorageLevel
+        .getStorageLevel
+    )
+
+  // -- v2 write --------------------------------------------------------------
+
+  /** Creates a v2 (catalog) write configuration builder. */
+  def writeTo(table: String): DataFrameWriterV2 = new DataFrameWriterV2(table, this)
 }
 
 private[sql] object Dataset {
