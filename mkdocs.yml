@@ -48,5 +48,6 @@ nav:
   - Declarative Pipelines: pipelines.md
   - Configuration and Connection: configuration.md
   - Examples: examples.md
+  - Troubleshooting: troubleshooting.md
   - API (Scaladoc): /api/
   - Contributing: contributing.md
