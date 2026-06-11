@@ -89,6 +89,18 @@ On **Spark 3.5.x** the Connect server is not bundled. Use a Scala 2.13 distribut
 ./sbin/start-connect-server.sh --packages "org.apache.spark:spark-connect_2.13:3.5.5"
 ```
 
+## Interactive shell
+
+`bin/spark-connect-shell` is this project's `./bin/spark-shell` equivalent: it opens a Scala REPL with a `spark` session already connected (and `spark.implicits._` in scope).
+
+```bash
+bin/spark-connect-shell --remote sc://localhost:15002
+```
+
+```scala
+scala> spark.range(1, 6).select($"id", ($"id" * $"id").as("square")).show()
+```
+
 ## What it supports
 
 `spark-connect-scala3` implements the Spark Connect DataFrame, SQL, Structured

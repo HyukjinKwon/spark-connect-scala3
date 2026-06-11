@@ -97,6 +97,17 @@ lazy val client = (project in file("modules/client"))
       "org.scalameta" %% "munit" % "1.0.2" % Test
     ),
     testFrameworks += new TestFramework("munit.Framework"),
+    // Powers `bin/spark-connect-shell`: `sbt client/console` opens a REPL with a `spark`
+    // session already connected to the address in the `spark.connect.shell.remote` property.
+    Compile / console / initialCommands := {
+      val remote = sys.props.getOrElse("spark.connect.shell.remote", "sc://localhost:15002")
+      s"""import org.apache.spark.sql.SparkSession
+         |import org.apache.spark.sql.functions._
+         |val spark = SparkSession.builder.remote("$remote").getOrCreate()
+         |import spark.implicits._
+         |println("Connected to Spark Connect " + spark.version + " at $remote; the `spark` session is ready.")
+         |""".stripMargin
+    },
     Compile / doc / scalacOptions ++= Seq(
       "-project",
       "Spark Connect for Scala 3",

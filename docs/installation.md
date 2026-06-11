@@ -112,4 +112,38 @@ spark.range(5).show()
 spark.stop()
 ```
 
+## Try it in a Scala REPL
+
+With a Connect server running, the quickest way to explore is
+`bin/spark-connect-shell` - this repository's equivalent of Spark's
+`./bin/spark-shell`. It opens a Scala REPL with the client on the classpath and a
+`spark` session already connected and ready (it also opens the Arrow JDK modules
+for you, so you do not need the flags above):
+
+```bash
+# Defaults to sc://localhost:15002
+bin/spark-connect-shell
+
+# Or point it at any Spark Connect server (a positional sc://... argument or the
+# SPARK_REMOTE environment variable also work):
+bin/spark-connect-shell --remote sc://my-host:15002
+```
+
+You land at a `scala>` prompt with `spark` and `spark.implicits._` already in
+scope:
+
+```scala
+spark.range(1, 6).select($"id", ($"id" * $"id").as("square")).show()
+
+Seq(("a", 1), ("b", 2), ("a", 3))
+  .toDF("key", "value")
+  .groupBy($"key")
+  .agg(sum($"value").as("total"))
+  .orderBy($"key")
+  .show()
+```
+
+Type `:quit` to exit. The script uses `sbt client/console`, so `sbt` is the only
+prerequisite and the client is built on first run.
+
 Continue with the [Quickstart](quickstart.md).
