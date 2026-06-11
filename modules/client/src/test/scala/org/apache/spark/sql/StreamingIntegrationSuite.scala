@@ -35,6 +35,19 @@ class StreamingIntegrationSuite extends munit.FunSuite {
 
   private var spark: SparkSession = null
 
+  /** The server version (from the CI matrix env, falling back to the server-reported version). */
+  private def serverVersion: String =
+    sys.env.getOrElse("SPARK_CONNECT_TEST_VERSION", spark.version)
+
+  /** True if the connected server is at least `major.minor`. */
+  private def serverAtLeast(major: Int, minor: Int): Boolean = {
+    val parts =
+      serverVersion.split("\\.").map(_.takeWhile(_.isDigit)).filter(_.nonEmpty).map(_.toInt)
+    val maj = parts.lift(0).getOrElse(0)
+    val min = parts.lift(1).getOrElse(0)
+    maj > major || (maj == major && min >= minor)
+  }
+
   override def beforeAll(): Unit =
     if (!munitIgnore) {
       spark = SparkSession.builder.remote(remote).create()
@@ -79,6 +92,9 @@ class StreamingIntegrationSuite extends munit.FunSuite {
   }
 
   test("StreamingQueryListener receives events and can be removed") {
+    // The server-side listener event channel only delivers events reliably on Spark 4.0+.
+    // On 3.5.x registration works but events are not streamed back, so skip the assertion there.
+    assume(serverAtLeast(4, 0), "StreamingQueryListener event delivery requires Spark 4.0+")
     import org.apache.spark.sql.streaming.StreamingQueryListener
     import java.util.concurrent.atomic.AtomicInteger
     val events = new AtomicInteger(0)
