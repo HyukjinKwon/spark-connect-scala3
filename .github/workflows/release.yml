@@ -1,25 +1,42 @@
 name: Release
 
-# Publishes to Maven Central (Sonatype Central) via sbt-ci-release when a
-# version tag is pushed.
+# Publishes the artifacts to Maven Central (via the Sonatype Central Portal) and
+# creates a GitHub Release. Triggered by pushing a version tag, e.g.:
 #
-# Required repository secrets (read by sbt-ci-release):
-#   PGP_SECRET        - base64-encoded PGP private key used to sign artifacts
-#   PGP_PASSPHRASE    - passphrase for the PGP private key
-#   SONATYPE_USERNAME - Sonatype Central user token name
-#   SONATYPE_PASSWORD - Sonatype Central user token secret
+#     git tag v0.1.0 && git push origin v0.1.0
+#
+# sbt-ci-release derives the published version from the tag: `v0.1.0` -> `0.1.0`.
+# A manual run (workflow_dispatch) without a tag publishes a -SNAPSHOT instead.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   SONATYPE_USERNAME - Central Portal user token name  (central.sonatype.com -> Account -> Generate User Token)
+#   SONATYPE_PASSWORD - Central Portal user token secret
+#   PGP_SECRET        - base64-encoded ASCII-armored PGP private key (e.g. `gpg --armor --export-secret-keys KEY | base64`)
+#   PGP_PASSPHRASE    - passphrase for that PGP key
+#
+# One-time setup: register/verify the `io.github.hyukjinkwon` namespace on the
+# Central Portal and publish the public half of the PGP key to a keyserver.
+
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
 
 jobs:
-  release:
+  publish:
     name: Publish to Maven Central
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          # sbt-ci-release derives the version from the git tag; fetch tags.
+          # sbt-dynver derives the version from git tags; fetch full history + tags.
           fetch-depth: 0
 
       - name: Set up JDK 17
@@ -32,10 +49,20 @@ jobs:
       - name: Set up sbt
         uses: sbt/setup-sbt@v1
 
-      - name: Publish
+      - name: Publish to Maven Central
         run: sbt ci-release
         env:
-          PGP_SECRET: ${{ secrets.PGP_SECRET }}
-          PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
           SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+          PGP_SECRET: ${{ secrets.PGP_SECRET }}
+          PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
+
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "${{ github.ref_name }}" \
+            --generate-notes
