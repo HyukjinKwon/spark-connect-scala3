@@ -95,9 +95,21 @@ jobs:
       - name: Download Spark
         if: steps.spark-cache.outputs.cache-hit != 'true'
         run: |
+          set -euo pipefail
           mkdir -p ~/spark
-          curl -L "https://archive.apache.org/dist/spark/spark-${{ matrix.spark }}/${{ matrix.tarball }}" \
-            | tar xz -C ~/spark --strip-components=1
+          # Prefer the Apache CDN (fast); fall back to the archive. Bounded timeouts
+          # and retries so a slow mirror can never hang the job.
+          ok=false
+          for base in "https://dlcdn.apache.org/spark" "https://archive.apache.org/dist/spark"; do
+            url="$base/spark-${{ matrix.spark }}/${{ matrix.tarball }}"
+            echo "Downloading $url"
+            if curl -fL --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 900 "$url" -o /tmp/spark.tgz; then
+              ok=true; break
+            fi
+            echo "Mirror failed: $url"
+          done
+          if [ "$ok" != "true" ]; then echo "All Spark mirrors failed"; exit 1; fi
+          tar xzf /tmp/spark.tgz -C ~/spark --strip-components=1
 
       - name: Start Spark Connect server
         run: |
