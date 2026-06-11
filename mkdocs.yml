@@ -9,26 +9,18 @@ theme:
   name: material
   features:
     - navigation.sections
+    - navigation.expand
     - navigation.top
     - navigation.instant
     - content.code.copy
     - content.code.annotate
     - search.highlight
+  # Single fixed (light) palette. The dark/light toggle button is intentionally
+  # removed per maintainer preference - do NOT re-add a `toggle:` here.
   palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: deep orange
-      accent: deep orange
-      toggle:
-        icon: material/weather-night
-        name: Switch to dark mode
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      primary: deep orange
-      accent: deep orange
-      toggle:
-        icon: material/weather-sunny
-        name: Switch to light mode
+    scheme: default
+    primary: deep orange
+    accent: deep orange
 
 markdown_extensions:
   - admonition
