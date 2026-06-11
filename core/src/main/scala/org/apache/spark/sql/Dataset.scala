@@ -81,8 +81,14 @@ class Dataset[T] private[sql] (
         sparkSession.allocator,
         sparkSession.timeZoneId
       )
-    try f(result)
-    finally result.close()
+    try {
+      val out = f(result)
+      // Deliver any observed metrics (Dataset.observe) to registered Observations.
+      if (!sparkSession.observations.isEmpty) {
+        sparkSession.completeObservations(result.observedMetrics)
+      }
+      out
+    } finally result.close()
   }
 
   private def checkSameSession(other: Dataset[?]): Unit =
@@ -613,6 +619,15 @@ class Dataset[T] private[sql] (
         )
       )
     )
+
+  /**
+   * Observe metrics through an [[Observation]] instance. The metrics are available on the
+   * observation after the first action runs on the returned Dataset. @group basic
+   */
+  def observe(observation: Observation, expr: Column, exprs: Column*): Dataset[T] = {
+    sparkSession.registerObservation(observation)
+    observe(observation.name, expr, exprs*)
+  }
 
   // ---------------------------------------------------------------------------
   // NA / stat namespaces

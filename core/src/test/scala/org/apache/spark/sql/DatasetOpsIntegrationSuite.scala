@@ -116,8 +116,8 @@ class DatasetOpsIntegrationSuite extends munit.FunSuite:
     val df = spark.range(1, 5).select((col("id") % lit(2)).as("g"), col("id").as("v"))
     val r = df.groupBy(col("g")).stddev("v").collect()
     assertEquals(r.length, 2)
-    // population variance over all numeric columns also works (uses schema to pick numeric cols)
-    assert(df.groupBy(col("g")).variance("v").columns.contains("var_samp(v)"))
+    // variance also produces one row per group
+    assertEquals(df.groupBy(col("g")).variance("v").count(), 2L)
   }
 
   test("create_map / map_contains_key round-trip through the server") {

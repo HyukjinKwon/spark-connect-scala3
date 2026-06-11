@@ -59,6 +59,8 @@ final class SparkResult(
   private var _operationId: Option[String] = None
   private var _processedRows: Long = 0L
   private val _metrics = ArrayBuffer.empty[(String, Long)]
+  private val _observedMetrics =
+    scala.collection.mutable.LinkedHashMap.empty[String, Map[String, Any]]
   private var _rows: Array[Row] = null
 
   private def materialize(): Unit =
@@ -73,6 +75,13 @@ final class SparkResult(
         _schema = DataTypeProtoConverter.toStructType(response.schema.get)
       response.getMetrics.metrics.foreach { m =>
         m.executionMetrics.foreach { case (k, v) => _metrics += (s"${m.name}.$k" -> v.value) }
+      }
+      response.observedMetrics.foreach { om =>
+        val values = om.values.map(decodeLiteral)
+        val named =
+          if om.keys.nonEmpty && om.keys.size == values.size then om.keys.zip(values).toMap
+          else values.zipWithIndex.map { case (v, i) => s"col$i" -> v }.toMap
+        _observedMetrics(om.name) = named
       }
       response.responseType.arrowBatch.foreach { batch =>
         _processedRows += batch.rowCount
@@ -133,6 +142,26 @@ final class SparkResult(
   def metrics: Seq[(String, Long)] =
     materialize()
     _metrics.toSeq
+
+  /** Named observed metrics (from `Dataset.observe`), keyed by observation name. */
+  def observedMetrics: Map[String, Map[String, Any]] =
+    materialize()
+    _observedMetrics.toMap
+
+  private def decodeLiteral(l: proto.Expression.Literal): Any =
+    val t = l.literalType
+    if t.isLong then l.getLong
+    else if t.isInteger then l.getInteger
+    else if t.isDouble then l.getDouble
+    else if t.isFloat then l.getFloat
+    else if t.isShort then l.getShort
+    else if t.isByte then l.getByte
+    else if t.isBoolean then l.getBoolean
+    else if t.isString then l.getString
+    else if t.isDecimal then BigDecimal(l.getDecimal.value)
+    else if t.isDate then l.getDate
+    else if t.isTimestamp then l.getTimestamp
+    else null
 
   override def close(): Unit =
     responses match

@@ -87,6 +87,7 @@ nav:
       - Running SQL: guide/sql.md
       - Catalog: guide/catalog.md
       - Structured Streaming: guide/streaming.md
+      - Declarative Pipelines: guide/pipelines.md
       - Data Types & Schemas: guide/types.md
   - Reference:
       - Architecture: reference/architecture.md

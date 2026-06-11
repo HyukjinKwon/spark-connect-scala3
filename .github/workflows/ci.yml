@@ -50,11 +50,28 @@ jobs:
             --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
 
   integration:
-    name: Integration tests (live Spark Connect server)
+    name: Integration (Spark ${{ matrix.spark }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Spark 4.0.0+ ships a Scala 2.13 build that bundles the Connect server,
+        # so the default tarball works and no --packages is needed. Spark 3.5.x
+        # defaults to a Scala 2.12 build and does NOT bundle Connect, so we use
+        # the Scala 2.13 distribution AND add the matching spark-connect_2.13
+        # package. Version-specific features (e.g. Declarative Pipelines, 4.1+)
+        # are skipped at runtime by the suites based on the server version.
+        include:
+          - spark: "4.1.2"
+            dist: spark-4.1.2-bin-hadoop3
+            packages: ""
+          - spark: "4.0.0"
+            dist: spark-4.0.0-bin-hadoop3
+            packages: ""
+          - spark: "3.5.5"
+            dist: spark-3.5.5-bin-hadoop3-scala2.13
+            packages: "--packages org.apache.spark:spark-connect_2.13:3.5.5"
     env:
-      SPARK_VERSION: 4.1.2
-      HADOOP_PROFILE: hadoop3
       SPARK_REMOTE: sc://localhost:15002
     steps:
       - uses: actions/checkout@v6
@@ -74,23 +91,21 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/spark
-          key: spark-${{ env.SPARK_VERSION }}-${{ env.HADOOP_PROFILE }}
+          # Keyed on the distribution name so a Scala-version change busts the cache.
+          key: ${{ matrix.dist }}
 
-      - name: Download Apache Spark ${{ env.SPARK_VERSION }}
+      - name: Download Apache Spark ${{ matrix.spark }}
         if: steps.spark-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           mkdir -p ~/spark
-          url="https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-${HADOOP_PROFILE}.tgz"
-          echo "Downloading $url"
-          curl -fsSL "$url" -o /tmp/spark.tgz
-          tar xzf /tmp/spark.tgz -C ~/spark --strip-components=1
+          curl -fsSL "https://archive.apache.org/dist/spark/spark-${{ matrix.spark }}/${{ matrix.dist }}.tgz" \
+            | tar xz -C ~/spark --strip-components=1
 
       - name: Start Spark Connect server
         run: |
           set -euo pipefail
-          # Spark 4.0.0+ bundles the Spark Connect server, so no --packages is needed.
-          ~/spark/sbin/start-connect-server.sh --conf spark.log.level=WARN
+          ~/spark/sbin/start-connect-server.sh ${{ matrix.packages }} --conf spark.log.level=WARN
           echo "Waiting for sc://localhost:15002 ..."
           for i in $(seq 1 60); do
             if (echo > /dev/tcp/localhost/15002) >/dev/null 2>&1; then

@@ -35,6 +35,18 @@ class StreamingAndOpsIntegrationSuite extends munit.FunSuite {
   private def withSpark(body: SparkSession => Unit): Unit =
     if (remote.isDefined) body(spark)
 
+  /** Whether the live server is at least the given Spark version (for feature gating). */
+  private def serverAtLeast(major: Int, minor: Int): Boolean =
+    remote.isDefined && {
+      val parts = spark.version.split("[.-]").take(2).map(s => s.toIntOption.getOrElse(0))
+      val (svMajor, svMinor) = (parts.headOption.getOrElse(0), parts.lift(1).getOrElse(0))
+      svMajor > major || (svMajor == major && svMinor >= minor)
+    }
+
+  /** Run only when the server is at least the given Spark version, otherwise skip. */
+  private def withSparkAtLeast(major: Int, minor: Int)(body: SparkSession => Unit): Unit =
+    if (remote.isDefined && serverAtLeast(major, minor)) body(spark)
+
   test("structured streaming: rate source -> memory sink") {
     withSpark { s =>
       val query = s.readStream
@@ -109,8 +121,9 @@ class StreamingAndOpsIntegrationSuite extends munit.FunSuite {
     }
   }
 
-  test("local checkpoint") {
-    withSpark { s =>
+  test("local checkpoint (Spark 4.0+)") {
+    // The Connect CheckpointCommand was introduced in Spark 4.0.
+    withSparkAtLeast(4, 0) { s =>
       val df = s.range(0, 25).localCheckpoint()
       assertEquals(df.count(), 25L)
     }

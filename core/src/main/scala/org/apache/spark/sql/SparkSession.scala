@@ -51,6 +51,22 @@ class SparkSession private[sql] (
   /** Off-heap allocator shared by Arrow readers/writers created for this session. */
   private[sql] val allocator: BufferAllocator = new RootAllocator()
 
+  /** Pending [[Observation]]s awaiting metrics from the next action, keyed by name. */
+  private[sql] val observations =
+    new java.util.concurrent.ConcurrentHashMap[String, Observation]()
+
+  private[sql] def registerObservation(o: Observation): Unit = observations.put(o.name, o)
+
+  /** Deliver observed metrics from a result stream to any matching registered observations. */
+  private[sql] def completeObservations(metrics: Map[String, Map[String, Any]]): Unit =
+    metrics.foreach { case (obsName, values) =>
+      val o = observations.get(obsName)
+      if (o != null) {
+        o.setMetricsIfAbsent(values)
+        observations.remove(obsName)
+      }
+    }
+
   /** The client-side session id. */
   private[sql] def sessionId: String = client.sessionId
 
