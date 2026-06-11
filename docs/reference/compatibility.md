@@ -44,7 +44,10 @@ ports unchanged.
 - Actions: `collect`, `collectAsList`, `count`, `take`, `head`, `first`, `show`,
   `isEmpty`, `toLocalIterator`, `foreach`, `foreachPartition`
 - Inspection: `printSchema`, `schema`, `columns`, `dtypes`, `explain`
-- Typed `Dataset[T]` with case-class encoders
+
+The API is `DataFrame` (= `Dataset[Row]`) based, matching what the server returns. `as[U]`
+provides a typed view; results are read as [`Row`](../guide/dataframe.md). See *Not supported*
+below for closure/encoder-typed operations.
 
 ## Column & functions
 
@@ -82,6 +85,16 @@ ports unchanged.
 
 See the [Structured Streaming guide](../guide/streaming.md).
 
+## Declarative Pipelines (Spark 4.1+)
+
+- `spark.pipeline(...)` to create a dataflow graph
+- `createTable`, `createMaterializedView`, `createTemporaryView`, `createSink`
+- `defineFlow`, `defineSql`, `read`
+- `startRun` (with `storage`, `fullRefresh`, `refresh`, `dry`), `drop`
+
+Requires an Apache Spark 4.1 or newer server; the integration suite skips this surface
+on older servers. See the [Declarative Pipelines guide](../guide/pipelines.md).
+
 ## Types
 
 - The full `org.apache.spark.sql.types` hierarchy
@@ -90,11 +103,14 @@ See the [Structured Streaming guide](../guide/streaming.md).
 
 ## Not supported
 
-Two parts of the Spark API require shipping user JVM closures to the server, which the
-Spark Connect protocol does not transport, so they are out of scope:
+Some operations require shipping user JVM closures to the server, which the Spark Connect
+protocol does not transport, so they are out of scope:
 
 - User-defined functions (UDFs / UDAFs / UDTFs).
 - The `foreach` / `foreachBatch` sinks in Structured Streaming.
+- Closure-based typed transforms (`Dataset.map` / `flatMap` over a Scala function) and
+  custom case-class encoders. Use the relational API and read results as `Row`; `as[U]`
+  gives a typed view without a custom encoder.
 
 Everything else in the Spark Connect surface is implemented. The
 [Scaladoc](https://hyukjinkwon.github.io/spark-connect-scala3/api/) documents every

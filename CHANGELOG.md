@@ -23,7 +23,8 @@ Apache Spark 3.5 and above Connect servers.
   aggregation, `orderBy` / `sort`, `limit`, `offset`, `distinct`, `dropDuplicates`,
   `union` / `unionByName`, `intersect`, `except`, `unpivot` / `transpose`,
   `repartition` / `coalesce`, `sample` / `randomSplit`, the `na` and `stat` sub-APIs,
-  `describe` / `summary`, observations, and typed `Dataset[T]` with case-class encoders.
+  `describe` / `summary`, and observations. The API is `DataFrame` (= `Dataset[Row]`)
+  based; `as[U]` gives a typed view and results are read as `Row`.
 - **Actions** - `collect`, `collectAsList`, `count`, `take`, `head`, `first`, `show`,
   `isEmpty`, `toLocalIterator`, `foreach`, `foreachPartition`; `printSchema`, `schema`,
   `columns`, `dtypes`, `explain`.
@@ -41,6 +42,8 @@ Apache Spark 3.5 and above Connect servers.
 - **Structured Streaming** - `readStream` / `writeStream`, triggers (processing-time,
   once, available-now, continuous), output modes (append, complete, update), watermarks,
   `StreamingQuery`, and `StreamingQueryManager`.
+- **Declarative Pipelines** (Spark 4.1+) - `spark.pipeline(...)`, tables, materialized
+  views, temporary views, sinks, flows, `defineSql`, and `startRun`.
 - **Types** - the full `org.apache.spark.sql.types` hierarchy with protobuf
   round-tripping, `StructType.fromDDL`, and `DataTypes` factories.
 - **Results** - Apache Arrow columnar decoding into `org.apache.spark.sql.Row`.
@@ -50,7 +53,8 @@ Apache Spark 3.5 and above Connect servers.
 
 ### Not supported
 
-- User-defined functions (UDFs / UDAFs / UDTFs) and the `foreach` / `foreachBatch` streaming
-  sinks, because they require shipping user JVM closures to the server.
+- User-defined functions (UDFs / UDAFs / UDTFs), the `foreach` / `foreachBatch` streaming
+  sinks, and closure-based typed transforms (`Dataset.map` / `flatMap`) with custom
+  encoders, because they require shipping user JVM closures to the server.
 
 [0.1.0]: https://github.com/HyukjinKwon/spark-connect-scala3/releases/tag/v0.1.0

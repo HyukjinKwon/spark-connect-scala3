@@ -69,10 +69,43 @@ cross-compile against Scala 2 artifacts or you can't use it at all.
 
 ## Install
 
-Add the dependency (the `%%` operator appends the Scala 3 `_3` suffix):
+The artifact is published to Maven Central for Scala 3 as
+`io.github.hyukjinkwon:spark-connect-scala3_3:0.1.0`. The `_3` suffix is the Scala 3
+binary-version tag; sbt/Mill add it automatically via `%%`/`::`, while Maven and Gradle
+need it spelled out.
+
+**sbt** (`build.sbt`):
 
 ```scala
 libraryDependencies += "io.github.hyukjinkwon" %% "spark-connect-scala3" % "0.1.0"
+```
+
+**Maven** (`pom.xml`):
+
+```xml
+<dependency>
+  <groupId>io.github.hyukjinkwon</groupId>
+  <artifactId>spark-connect-scala3_3</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
+**Gradle** (`build.gradle` / `build.gradle.kts`):
+
+```groovy
+implementation 'io.github.hyukjinkwon:spark-connect-scala3_3:0.1.0'
+```
+
+**Mill** (`build.sc`):
+
+```scala
+def ivyDeps = Agg(ivy"io.github.hyukjinkwon::spark-connect-scala3:0.1.0")
+```
+
+**scala-cli**:
+
+```scala
+//> using dep io.github.hyukjinkwon::spark-connect-scala3:0.1.0
 ```
 
 ## Start a Spark Connect server
@@ -126,10 +159,13 @@ Supported parameters: `token`, `user_id`, `user_agent`, `use_ssl`, `session_id`.
 | I/O | `DataFrameReader`/`Writer` (csv/json/parquet/orc/text/jdbc/table), `saveAsTable`/`insertInto`, `partitionBy`/`bucketBy`/`sortBy`, `DataFrameWriterV2` |
 | Catalog | databases, tables, columns, functions, temp views, caching |
 | Streaming | Structured Streaming: `readStream`/`writeStream`, triggers, output modes, watermarks, `StreamingQuery`, `StreamingQueryManager` |
+| Pipelines | Spark Declarative Pipelines (Spark 4.1+): `spark.pipeline(...)`, tables/materialized views/sinks, flows, `startRun` |
 
-**Not supported:** user-defined functions (UDFs/UDAFs/UDTFs) and the `foreach`/`foreachBatch`
-streaming sinks, because they require shipping user JVM closures to the server.
-Everything else in the Spark Connect surface is implemented.
+**Not supported:** user-defined functions (UDFs/UDAFs/UDTFs), the `foreach`/`foreachBatch`
+streaming sinks, and closure-based typed transforms (`Dataset.map`/`flatMap` with custom
+encoders) - all require shipping user JVM closures to the server, which the protocol does
+not transport. The relational `DataFrame`/`Row` API (the same surface the Ruby/Python
+Connect clients expose) is complete.
 
 ## How it works
 
@@ -151,6 +187,7 @@ request; results stream back as Arrow IPC batches that are decoded into `Row`s.
 - [Getting started](https://hyukjinkwon.github.io/spark-connect-scala3/getting-started/)
 - [User guide](https://hyukjinkwon.github.io/spark-connect-scala3/guide/sparksession/)
 - [Structured Streaming](https://hyukjinkwon.github.io/spark-connect-scala3/guide/streaming/)
+- [Declarative Pipelines](https://hyukjinkwon.github.io/spark-connect-scala3/guide/pipelines/)
 - [API reference (Scaladoc)](https://hyukjinkwon.github.io/spark-connect-scala3/api/)
 - [Examples](examples/)
 

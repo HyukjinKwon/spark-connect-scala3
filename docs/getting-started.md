@@ -13,10 +13,30 @@ above.
 
 ## 2. Add the dependency
 
+Published to Maven Central as `io.github.hyukjinkwon:spark-connect-scala3_3:0.1.0`. The
+`_3` suffix is the Scala 3 tag; sbt/Mill add it automatically, Maven/Gradle need it
+written out.
+
 === "sbt"
 
     ```scala
     libraryDependencies += "io.github.hyukjinkwon" %% "spark-connect-scala3" % "0.1.0"
+    ```
+
+=== "Maven"
+
+    ```xml
+    <dependency>
+      <groupId>io.github.hyukjinkwon</groupId>
+      <artifactId>spark-connect-scala3_3</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+    ```
+
+=== "Gradle"
+
+    ```groovy
+    implementation 'io.github.hyukjinkwon:spark-connect-scala3_3:0.1.0'
     ```
 
 === "Mill"

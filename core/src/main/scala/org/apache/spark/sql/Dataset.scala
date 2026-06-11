@@ -32,9 +32,11 @@ import org.apache.spark.sql.types.StructType
  * `proto.Relation` (the logical plan) and a [[SparkSession]]. Transformations build a new relation
  * referencing the current one; actions submit the plan to the server for execution.
  *
- * The untyped `DataFrame` (= `Dataset[Row]`) surface is fully supported. Typed encoders (`as[U:
- * Encoder]`, typed `map`) are a planned enhancement; until then `collect()` yields [[Row]]s and
- * `as[U]` reinterprets the wrapper.
+ * The relational `DataFrame` (= `Dataset[Row]`) surface is complete and results are read as
+ * [[Row]]. `as[U]` provides a typed view of the same relation. Closure-based typed transforms
+ * (`map`/`flatMap` over a Scala function) and custom case-class encoders are intentionally not
+ * supported: they require shipping user JVM closures to the server, which the Spark Connect
+ * protocol does not transport (the same reason UDFs are out of scope).
  *
  * @groupname basic     Basic Dataset functions
  * @groupname action     Actions
@@ -201,7 +203,10 @@ class Dataset[T] private[sql] (
       )
     )
 
-  /** Reinterprets this Dataset as `Dataset[U]`. Typed decode is a planned enhancement. */
+  /**
+   * Returns a typed view of this Dataset as `Dataset[U]` over the same relation. Rows are still
+   * decoded as [[Row]] (Spark Connect transports columnar Arrow data, not user encoders).
+   */
   def as[U]: Dataset[U] = new Dataset[U](sparkSession, relation)
 
   /** Returns a new Dataset with an alias set. @group basic */

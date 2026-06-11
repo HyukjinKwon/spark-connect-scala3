@@ -12,9 +12,8 @@ theme:
   features:
     - navigation.instant
     - navigation.tracking
-    - navigation.tabs
-    - navigation.tabs.sticky
     - navigation.sections
+    - navigation.expand
     - navigation.top
     - navigation.indexes
     - navigation.footer
@@ -25,21 +24,11 @@ theme:
     - search.highlight
     - search.share
     - toc.follow
+  # Single fixed (light) palette: the dark/light toggle button is intentionally removed.
   palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: deep orange
-      accent: orange
-      toggle:
-        icon: material/weather-night
-        name: Switch to dark mode
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      primary: deep orange
-      accent: orange
-      toggle:
-        icon: material/weather-sunny
-        name: Switch to light mode
+    scheme: default
+    primary: deep orange
+    accent: orange
   icon:
     repo: fontawesome/brands/github
   font:
