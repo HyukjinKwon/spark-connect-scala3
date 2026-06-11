@@ -43,9 +43,9 @@ This project is that client for Scala 3.
 
 ## What it supports
 
-`spark-connect-scala3` implements the Spark Connect DataFrame, SQL, Structured Streaming, and Declarative Pipelines API, modeled directly on Apache Spark's Scala API: everything except user-defined functions (UDFs) and the `foreach`/`foreachBatch` streaming sinks, which run user JVM code on the server that the Spark Connect protocol does not transport. (MLlib over Connect is also out of scope.)
+`spark-connect-scala3` implements the Spark Connect DataFrame, SQL, Structured Streaming, and Declarative Pipelines API -- everything except user-defined functions (UDFs) and the `foreach`/`foreachBatch` streaming sinks, whose Spark Connect protobuf definitions are not yet finalized. (The separate, experimental MLlib-over-Connect surface is also out of scope.)
 
-Results decode through Apache Arrow into ordered, name-addressable `Row`s. Class and method names match Apache Spark's Scala API (`SparkSession`, `DataFrame`, `Column`, `functions`, `Window`, `Catalog`, ...), so existing Spark Scala code ports almost verbatim.
+Results decode through Apache Arrow into ordered, name-addressable `Row`s. Class and method names match Apache Spark's Scala API (`SparkSession`, `DataFrame`, `Column`, `functions`, ...), so existing Spark Scala code ports almost verbatim.
 
 ## Project facts
 
