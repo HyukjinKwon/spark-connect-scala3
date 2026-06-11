@@ -48,6 +48,7 @@ nav:
   - Declarative Pipelines: pipelines.md
   - Configuration and Connection: configuration.md
   - Examples: examples.md
+  - API coverage: api-coverage.md
   - Troubleshooting: troubleshooting.md
   - API (Scaladoc): https://hyukjinkwon.github.io/spark-connect-scala3/api/
   - Contributing: contributing.md
