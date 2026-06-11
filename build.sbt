@@ -29,7 +29,7 @@ ThisBuild / scalacOptions ++= Seq(
 
 val grpcVersion = "1.65.1"
 val arrowVersion = "17.0.0"
-val sparkConnectProtoVersion = "4.0.0" // Spark version the protobufs are sourced from.
+val sparkConnectProtoVersion = "4.1.2" // Spark version the protobufs are sourced from.
 
 // JVM module-access flags required by Arrow's off-heap memory on JDK 17+.
 val arrowJvmOptions = Seq(

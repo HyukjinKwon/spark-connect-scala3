@@ -1,0 +1,17 @@
+spark-connect-scala3 (Scala 3 client for Apache Spark Connect)
+Copyright 2026 The spark-connect-scala3 authors
+
+This product includes software developed as part of the
+Apache Spark project (https://spark.apache.org/).
+
+The Protocol Buffers definitions under
+modules/proto/src/main/protobuf/spark/connect/ are vendored from Apache Spark
+(https://github.com/apache/spark), which is licensed under the Apache License,
+Version 2.0:
+
+    Apache Spark
+    Copyright 2014 and onwards The Apache Software Foundation.
+
+This product is not affiliated with, endorsed by, or sponsored by the Apache
+Software Foundation. "Apache", "Apache Spark", and "Spark" are trademarks of the
+Apache Software Foundation.

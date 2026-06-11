@@ -57,6 +57,36 @@ class Dataset private[sql] (
   def isStreaming: Boolean = sparkSession.client.isStreaming(plan)
   def inputFiles: Array[String] = sparkSession.client.inputFiles(plan).toArray
 
+  // -- Column references -----------------------------------------------------
+
+  /**
+   * Selects a column by name, qualified by this Dataset's plan id so that it resolves
+   * unambiguously even in self-joins.
+   */
+  def col(colName: String): Column = {
+    val planId = relation.common.flatMap(_.planId)
+    if (colName == "*") {
+      Column(
+        proto.Expression(exprType = proto.Expression.ExprType.UnresolvedStar(
+          proto.Expression.UnresolvedStar(planId = planId))))
+    } else {
+      Column(
+        proto.Expression(exprType = proto.Expression.ExprType.UnresolvedAttribute(
+          proto.Expression.UnresolvedAttribute(unparsedIdentifier = colName, planId = planId))))
+    }
+  }
+
+  /** Selects a column by name. Alias for [[col]]. */
+  def apply(colName: String): Column = col(colName)
+
+  /** Selects columns based on a column name regular expression. */
+  def colRegex(colName: String): Column = {
+    val planId = relation.common.flatMap(_.planId)
+    Column(
+      proto.Expression(exprType = proto.Expression.ExprType.UnresolvedRegex(
+        proto.Expression.UnresolvedRegex(colName = colName, planId = planId))))
+  }
+
   // -- Projection / filtering ------------------------------------------------
 
   def select(cols: Column*): DataFrame =
@@ -371,6 +401,37 @@ class Dataset private[sql] (
             name = viewName,
             isGlobal = global,
             replace = replace))))
+
+  // -- Statistics / summary --------------------------------------------------
+
+  /** Computes basic statistics (count, mean, stddev, min, max) for numeric and string columns. */
+  def describe(cols: String*): DataFrame =
+    withInput(RelType.Describe(proto.StatDescribe(input = Some(relation), cols = cols)))
+
+  /** Computes the requested summary statistics; defaults match Spark's `summary()`. */
+  def summary(statistics: String*): DataFrame =
+    withInput(RelType.Summary(proto.StatSummary(input = Some(relation), statistics = statistics)))
+
+  // -- Reading / writing / na / stat / observe -------------------------------
+
+  /** Interface for saving the content of this Dataset to external storage. */
+  def write: DataFrameWriter = new DataFrameWriter(this)
+
+  /** Interface for saving the content of a streaming Dataset to external storage. */
+  def writeStream: streaming.DataStreamWriter = new streaming.DataStreamWriter(this)
+
+  /** Returns a [[DataFrameNaFunctions]] for working with missing data. */
+  def na: DataFrameNaFunctions = new DataFrameNaFunctions(this)
+
+  /** Returns a [[DataFrameStatFunctions]] for statistic functions. */
+  def stat: DataFrameStatFunctions = new DataFrameStatFunctions(this)
+
+  /** Defines named observed metrics computed while this Dataset is processed. */
+  def observe(observation: Observation, expr: Column, exprs: Column*): DataFrame =
+    withInput(RelType.CollectMetrics(observation.markObserved(this, expr +: exprs)))
+
+  /** Concisely applies a transformation to this Dataset. */
+  def transform(t: Dataset => Dataset): Dataset = t(this)
 
   // -- Misc ------------------------------------------------------------------
 

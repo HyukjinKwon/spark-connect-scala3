@@ -1,0 +1,60 @@
+site_name: Spark Connect for Scala 3
+site_description: A pure-Scala-3 client for Apache Spark Connect.
+site_url: https://hyukjinkwon.github.io/spark-connect-scala3/
+repo_url: https://github.com/HyukjinKwon/spark-connect-scala3
+repo_name: HyukjinKwon/spark-connect-scala3
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.instant
+    - content.code.copy
+    - content.code.annotate
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: deep orange
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Quickstart: quickstart.md
+  - DataFrames: dataframes.md
+  - Columns and Functions: columns-and-functions.md
+  - Data Sources: data-sources.md
+  - SQL: sql.md
+  - Catalog: catalog.md
+  - Structured Streaming: streaming.md
+  - Declarative Pipelines: pipelines.md
+  - Configuration and Connection: configuration.md
+  - Examples: examples.md
+  - API (Scaladoc): /api/
+  - Contributing: contributing.md

@@ -60,6 +60,13 @@ private[sql] class SparkResult(
       response.responseType.arrowBatch.foreach { batch =>
         readArrowBatch(batch.data.toByteArray)
       }
+      response.observedMetrics.foreach { om =>
+        org.apache.spark.sql.Observation.lookup(om.name).foreach { obs =>
+          obs.setMetricsFromLiterals(
+            om.values.map(org.apache.spark.sql.Observation.decodeLiteral),
+            om.keys)
+        }
+      }
     }
     processed = true
   }

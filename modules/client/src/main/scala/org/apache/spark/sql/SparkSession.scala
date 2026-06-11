@@ -21,8 +21,11 @@ import java.util.concurrent.atomic.AtomicLong
 
 import org.apache.arrow.memory.{BufferAllocator, RootAllocator}
 
+import com.google.protobuf.ByteString
+
 import org.apache.spark.connect.proto
-import org.apache.spark.sql.connect.client.{SparkConnectClient, SparkResult}
+import org.apache.spark.sql.connect.client.{ArrowSerializer, SparkConnectClient, SparkResult}
+import org.apache.spark.sql.types.StructType
 
 /**
  * The entry point to programming Spark with the DataFrame API over Spark Connect.
@@ -121,8 +124,55 @@ class SparkSession private[sql] (
     newDataFrame(
       proto.Relation.RelType.LocalRelation(proto.LocalRelation(schema = Some("struct<>"))))
 
+  /** Creates a [[DataFrame]] from a local sequence of [[Row]]s using the given schema. */
+  def createDataFrame(rows: Seq[Row], schema: StructType): DataFrame = {
+    val data = rows.map(_.toSeq)
+    val bytes = ArrowSerializer.serialize(data, schema, allocator)
+    val ddl = schema.simpleString.stripPrefix("struct<").stripSuffix(">")
+    newDataFrame(
+      proto.Relation.RelType.LocalRelation(
+        proto.LocalRelation(data = Some(ByteString.copyFrom(bytes)), schema = Some(ddl))))
+  }
+
+  /** Creates a [[DataFrame]] from a Java list of [[Row]]s using the given schema. */
+  def createDataFrame(rows: java.util.List[Row], schema: StructType): DataFrame = {
+    import scala.jdk.CollectionConverters._
+    createDataFrame(rows.asScala.toSeq, schema)
+  }
+
+  // -- Reading / writing / catalog / streaming -------------------------------
+
+  /** Returns a [[DataFrameReader]] that can be used to read non-streaming data as a DataFrame. */
+  def read: DataFrameReader = new DataFrameReader(this)
+
+  /** Returns a [[org.apache.spark.sql.streaming.DataStreamReader]] for reading streaming data. */
+  def readStream: streaming.DataStreamReader = new streaming.DataStreamReader(this)
+
+  /** Returns a [[org.apache.spark.sql.streaming.StreamingQueryManager]] for this session. */
+  def streams: streaming.StreamingQueryManager = new streaming.StreamingQueryManager(this)
+
+  /** Returns the [[org.apache.spark.sql.catalog.Catalog]] interface for this session. */
+  lazy val catalog: org.apache.spark.sql.catalog.Catalog =
+    new org.apache.spark.sql.catalog.Catalog(this)
+
+  /** Returns the named table or view as a [[DataFrame]]. */
+  def table(tableName: String): DataFrame = read.table(tableName)
+
   /** The version of Spark on which the connected server is running. */
   def version: String = client.sparkVersion
+
+  /** Starts a new independent session against the same endpoint (fresh server-side session). */
+  def newSession(): SparkSession = new SparkSession(client.copy())
+
+  /**
+   * Creates a new Spark Declarative Pipeline (a dataflow graph) in this session.
+   * Available on Spark 4.1 and later servers.
+   */
+  def pipeline(
+      defaultCatalog: Option[String] = None,
+      defaultDatabase: Option[String] = None,
+      sqlConf: Map[String, String] = Map.empty): pipelines.Pipeline =
+    pipelines.Pipeline.create(this, defaultCatalog, defaultDatabase, sqlConf)
 
   /** Make this the active session for the current thread. */
   def setActive(): SparkSession = { SparkSession.setActiveSession(this); this }
