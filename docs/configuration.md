@@ -106,3 +106,29 @@ sbt "examples/runMain examples.QuickStart"
 
 SPARK_CONNECT_TEST_REMOTE=sc://localhost:15002 sbt "client/testOnly *Integration*"
 ```
+
+## Resiliency: retries and reattachable execution
+
+The client is resilient to transient network failures out of the box:
+
+- **Automatic retries.** Idempotent RPCs and the initial `ExecutePlan` are retried on
+  transient gRPC errors (for example `UNAVAILABLE`) using exponential backoff with
+  jitter, honoring any server-provided `RetryInfo` retry delay.
+- **Reattachable execution.** A query's result stream is requested as reattachable. If
+  the connection drops part-way through, the client resumes from the last response it
+  saw via `ReattachExecute` instead of re-running the query, and periodically issues
+  `ReleaseExecute` so the server can free buffered results. This is the same mechanism
+  used by the official PySpark and JVM clients and works against Spark 3.5 and newer.
+
+Reattachable execution is enabled by default. It can be turned off (for debugging, or
+against a server that does not support it) when constructing the client:
+
+```scala
+import org.apache.spark.sql.connect.client.SparkConnectClient
+
+val client = SparkConnectClient
+  .builder()
+  .connectionString("sc://localhost:15002")
+  .reattachable(false)
+  .build()
+```

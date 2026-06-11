@@ -40,6 +40,8 @@ class SparkConnectClient private[sql] (
   import SparkConnectClient._
 
   private val stub = proto.SparkConnectServiceGrpc.blockingStub(channel)
+  private val retryHandler = new GrpcRetryHandler(configuration.retryPolicies)
+  private lazy val reattachableStub = new GrpcReattachableStub(channel)
 
   /** The stable session id shared by all requests issued through this client. */
   val sessionId: String = configuration.sessionId.getOrElse(UUID.randomUUID().toString)
@@ -65,7 +67,15 @@ class SparkConnectClient private[sql] (
       plan = Some(plan),
       clientType = Some(userAgent)
     )
-    GrpcExceptionConverter.convertIterator(stub.executePlan(request))
+    val responses =
+      if (configuration.useReattachableExecute) {
+        // Resilient: resumes a broken stream via ReattachExecute and retries transient errors.
+        new ExecutePlanResponseReattachableIterator(request, reattachableStub, retryHandler)
+      } else {
+        // Non-reattachable: retry only the initial call (safe before any response is consumed).
+        retryHandler.retry(stub.executePlan(request))
+      }
+    GrpcExceptionConverter.convertIterator(responses)
   }
 
   // ---------------------------------------------------------------------------
@@ -79,7 +89,7 @@ class SparkConnectClient private[sql] (
       clientType = Some(userAgent),
       analyze = analyze
     )
-    GrpcExceptionConverter.convert(stub.analyzePlan(request))
+    GrpcExceptionConverter.convert(retryHandler.retry(stub.analyzePlan(request)))
   }
 
   private[sql] def analyzeSchema(plan: proto.Plan): proto.DataType =
@@ -156,7 +166,7 @@ class SparkConnectClient private[sql] (
       clientType = Some(userAgent),
       operation = Some(operation)
     )
-    GrpcExceptionConverter.convert(stub.config(request))
+    GrpcExceptionConverter.convert(retryHandler.retry(stub.config(request)))
   }
 
   private[sql] def setConf(key: String, value: String): Unit =
@@ -269,7 +279,9 @@ object SparkConnectClient {
       userAgent: String = Configuration.DEFAULT_USER_AGENT,
       sessionId: Option[String] = None,
       metadata: Map[String, String] = Map.empty,
-      maxInboundMessageSize: Int = Configuration.MAX_MESSAGE_SIZE
+      maxInboundMessageSize: Int = Configuration.MAX_MESSAGE_SIZE,
+      useReattachableExecute: Boolean = true,
+      retryPolicies: Seq[RetryPolicy] = RetryPolicy.defaultPolicies()
   ) {
 
     def toChannel: ManagedChannel = {
@@ -345,6 +357,12 @@ object SparkConnectClient {
 
     def enableSsl(): Builder = {
       configuration = configuration.copy(useSsl = true)
+      this
+    }
+
+    /** Enables or disables reattachable execution (resilient, resumable result streams). */
+    def reattachable(enabled: Boolean): Builder = {
+      configuration = configuration.copy(useReattachableExecute = enabled)
       this
     }
 

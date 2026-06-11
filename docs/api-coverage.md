@@ -23,6 +23,7 @@ are no surprises.
 | Observation | `Observation` for collecting named aggregate metrics while a query runs |
 | Config | `RuntimeConfig` (`spark.conf.get`/`set`/`unset`/`isModifiable`) |
 | Results | Apache Arrow IPC decoding into name-addressable `Row`s; connection-string parsing (`sc://host:port/;k=v`); bearer-token auth (implies TLS); server errors surfaced as typed Spark exceptions (AnalysisException/ParseException/SparkException) with the original message and error class |
+| Resiliency | Automatic retry of transient gRPC failures (exponential backoff + jitter), and reattachable execution that resumes a broken `ExecutePlan` result stream via `ReattachExecute` (with `ReleaseExecute` to free server buffers). On by default; toggle with `useReattachableExecute`. Works against Spark 3.5+ |
 
 ## Not supported
 
@@ -66,9 +67,6 @@ operations listed above remain out of scope.
 
 ## Known limitations
 
-- **No automatic retry or reattachable execution.** If the gRPC connection drops
-  mid-query, the error is surfaced to the caller rather than transparently retried
-  or resumed. Wrap calls in your own retry logic if you need it.
 - **Server stack traces are not reconstructed.** Errors carry the server's message
   and error class (and map to `AnalysisException` / `ParseException` /
   `SparkException`), but the remote JVM stack trace is not rebuilt on the client.
