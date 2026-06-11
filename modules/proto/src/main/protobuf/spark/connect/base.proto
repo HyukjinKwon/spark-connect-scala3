@@ -854,8 +854,8 @@ message ResultChunkingOptions {
   // Although Arrow results are split into batches with a size limit according to estimation, the
   // size of the batches is not guaranteed to be less than the limit, especially when a single row
   // is larger than the limit, in which case the server will fail to split it further into smaller
-  // batches. As a result, the client may encounter a gRPC error stating “Received message larger
-  // than max” when a batch is too large.
+  // batches. As a result, the client may encounter a gRPC error stating "Received message larger
+  // than max" when a batch is too large.
   // If allow_arrow_batch_chunking=true, the server will split large Arrow batches into smaller chunks,
   // and the client is expected to handle the chunked Arrow batches.
   //
