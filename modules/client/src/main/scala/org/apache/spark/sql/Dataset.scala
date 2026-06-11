@@ -716,6 +716,48 @@ class Dataset private[sql] (
 
   /** Creates a v2 (catalog) write configuration builder. */
   def writeTo(table: String): DataFrameWriterV2 = new DataFrameWriterV2(table, this)
+
+  // -- Schema reconciliation & watermark dedup --------------------------------
+
+  /**
+   * Returns a new Dataset where each row is reconciled to match the specified schema (by column
+   * name, reordering and casting as needed).
+   */
+  def to(schema: StructType): DataFrame =
+    withInput(
+      RelType.ToSchema(
+        proto.ToSchema(
+          input = Some(relation),
+          schema = Some(DataTypeProtoConverter.toConnectProtoType(schema))
+        )
+      )
+    )
+
+  /** Drops duplicates within the event-time watermark, keeping state bounded for streaming. */
+  def dropDuplicatesWithinWatermark(): DataFrame =
+    withInput(
+      RelType.Deduplicate(
+        proto.Deduplicate(
+          input = Some(relation),
+          allColumnsAsKeys = Some(true),
+          withinWatermark = Some(true)
+        )
+      )
+    )
+
+  def dropDuplicatesWithinWatermark(colNames: Seq[String]): DataFrame =
+    withInput(
+      RelType.Deduplicate(
+        proto.Deduplicate(
+          input = Some(relation),
+          columnNames = colNames,
+          withinWatermark = Some(true)
+        )
+      )
+    )
+
+  def dropDuplicatesWithinWatermark(col1: String, cols: String*): DataFrame =
+    dropDuplicatesWithinWatermark(col1 +: cols)
 }
 
 private[sql] object Dataset {

@@ -17,6 +17,10 @@
 
 package org.apache.spark.sql
 
+import java.util.concurrent.atomic.AtomicLong
+
+import org.apache.spark.connect.proto
+
 /**
  * Built-in functions for working with [[Column]]s, mirroring `org.apache.spark.sql.functions`.
  *
@@ -608,4 +612,94 @@ object functions {
   def nth_value(e: Column, offset: Int): Column = Column.fn("nth_value", e, lit(offset))
   def nth_value(e: Column, offset: Int, ignoreNulls: Boolean): Column =
     Column.fn("nth_value", e, lit(offset), lit(ignoreNulls))
+
+  // -- Higher-order (lambda) functions ----------------------------------------
+
+  private val lambdaCounter = new AtomicLong(0L)
+
+  /** Builds an `Expression.LambdaFunction` from a Scala function over fresh lambda variables. */
+  private def createLambda(numArgs: Int, f: Seq[Column] => Column): Column = {
+    val id = lambdaCounter.getAndIncrement()
+    val vars = (0 until numArgs).map { i =>
+      proto.Expression.UnresolvedNamedLambdaVariable(nameParts = Seq(s"x_${id}_$i"))
+    }
+    val args = vars.map(v =>
+      new Column(
+        proto.Expression(exprType = proto.Expression.ExprType.UnresolvedNamedLambdaVariable(v))
+      )
+    )
+    val body = f(args)
+    new Column(
+      proto.Expression(exprType =
+        proto.Expression.ExprType.LambdaFunction(
+          proto.Expression.LambdaFunction(function = Some(body.expr), arguments = vars)
+        )
+      )
+    )
+  }
+
+  /** Transforms elements of an array using the given function. */
+  def transform(column: Column, f: Column => Column): Column =
+    Column.fn("transform", column, createLambda(1, cs => f(cs(0))))
+
+  /** Transforms elements of an array using the (element, index) function. */
+  def transform(column: Column, f: (Column, Column) => Column): Column =
+    Column.fn("transform", column, createLambda(2, cs => f(cs(0), cs(1))))
+
+  /** True if the predicate holds for any element of the array. */
+  def exists(column: Column, f: Column => Column): Column =
+    Column.fn("exists", column, createLambda(1, cs => f(cs(0))))
+
+  /** True if the predicate holds for every element of the array. */
+  def forall(column: Column, f: Column => Column): Column =
+    Column.fn("forall", column, createLambda(1, cs => f(cs(0))))
+
+  /** Filters an array keeping elements for which the predicate holds. */
+  def filter(column: Column, f: Column => Column): Column =
+    Column.fn("filter", column, createLambda(1, cs => f(cs(0))))
+
+  /** Filters an array using the (element, index) predicate. */
+  def filter(column: Column, f: (Column, Column) => Column): Column =
+    Column.fn("filter", column, createLambda(2, cs => f(cs(0), cs(1))))
+
+  /** Applies a binary operator to an initial state and all array elements, then a finish step. */
+  def aggregate(
+      expr: Column,
+      initialValue: Column,
+      merge: (Column, Column) => Column,
+      finish: Column => Column
+  ): Column =
+    Column.fn(
+      "aggregate",
+      expr,
+      initialValue,
+      createLambda(2, cs => merge(cs(0), cs(1))),
+      createLambda(1, cs => finish(cs(0)))
+    )
+
+  def aggregate(expr: Column, initialValue: Column, merge: (Column, Column) => Column): Column =
+    aggregate(expr, initialValue, merge, identity)
+
+  /** Merges two arrays element-wise using the given function. */
+  def zip_with(left: Column, right: Column, f: (Column, Column) => Column): Column =
+    Column.fn("zip_with", left, right, createLambda(2, cs => f(cs(0), cs(1))))
+
+  /** Applies a function to every (key, value) entry of a map and returns transformed keys. */
+  def transform_keys(expr: Column, f: (Column, Column) => Column): Column =
+    Column.fn("transform_keys", expr, createLambda(2, cs => f(cs(0), cs(1))))
+
+  /** Applies a function to every (key, value) entry of a map and returns transformed values. */
+  def transform_values(expr: Column, f: (Column, Column) => Column): Column =
+    Column.fn("transform_values", expr, createLambda(2, cs => f(cs(0), cs(1))))
+
+  /** Filters a map keeping entries for which the (key, value) predicate holds. */
+  def map_filter(expr: Column, f: (Column, Column) => Column): Column =
+    Column.fn("map_filter", expr, createLambda(2, cs => f(cs(0), cs(1))))
+
+  /** Merges two maps by key using the (key, value1, value2) function. */
+  def map_zip_with(left: Column, right: Column, f: (Column, Column, Column) => Column): Column =
+    Column.fn("map_zip_with", left, right, createLambda(3, cs => f(cs(0), cs(1), cs(2))))
+
+  /** Marks a DataFrame as small enough for a broadcast join. */
+  def broadcast(df: Dataset): Dataset = df.hint("broadcast")
 }
