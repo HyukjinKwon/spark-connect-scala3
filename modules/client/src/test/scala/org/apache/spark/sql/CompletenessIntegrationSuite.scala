@@ -18,32 +18,12 @@
 package org.apache.spark.sql
 
 /**
- * End-to-end tests for the catalog metadata getters and the probabilistic sketches, against a real
- * Spark Connect server. Skipped automatically when no server is reachable (defaults to
- * `sc://localhost:15099`, override with `SPARK_REMOTE`).
+ * End-to-end tests for the catalog metadata getters, the probabilistic sketches, and
+ * [[RuntimeConfig]] against a real Spark Connect server. Runs under the shared [[RemoteSparkSuite]]
+ * harness, so it executes in the CI integration matrix (Spark 3.5/4.0/4.1) and is skipped when no
+ * `SPARK_CONNECT_TEST_REMOTE` server is configured.
  */
-class CompletenessIntegrationSuite extends munit.FunSuite:
-
-  private val remote: String = sys.env.getOrElse("SPARK_REMOTE", "sc://localhost:15099")
-
-  private def serverReachable: Boolean =
-    try
-      val uri = new java.net.URI(remote.replaceFirst("^sc://", "http://"))
-      val host = Option(uri.getHost).getOrElse("localhost")
-      val port = if uri.getPort > 0 then uri.getPort else 15002
-      val sock = new java.net.Socket()
-      sock.connect(new java.net.InetSocketAddress(host, port), 500)
-      sock.close()
-      true
-    catch case _: Throwable => false
-
-  override def munitIgnore: Boolean = !serverReachable
-
-  private lazy val spark: SparkSession = SparkSession.builder.remote(remote).getOrCreate()
-
-  override def afterAll(): Unit =
-    try spark.close()
-    catch case _: Throwable => ()
+class CompletenessIntegrationSuite extends RemoteSparkSuite {
 
   test("Catalog.getTable on a temporary view") {
     spark.range(5).createOrReplaceTempView("completeness_view")
@@ -59,8 +39,11 @@ class CompletenessIntegrationSuite extends munit.FunSuite:
   }
 
   test("Catalog.getFunction for a built-in") {
-    val f = spark.catalog.getFunction("abs")
-    assertEquals(f.name, "abs")
+    // Built-in function lookup via the catalog is reliable on Spark 4.0+.
+    whenServerAtLeast(4, 0) {
+      val f = spark.catalog.getFunction("abs")
+      assertEquals(f.name, "abs")
+    }
   }
 
   test("stat.countMinSketch estimates frequencies") {
@@ -74,3 +57,17 @@ class CompletenessIntegrationSuite extends munit.FunSuite:
     assert(bf.mightContain(5L), "5 is present so mightContain must be true")
     assert(!bf.mightContain(10_000_000L), "absent key should (almost surely) be reported absent")
   }
+
+  test("RuntimeConfig set / get / getAll / getOption / default") {
+    spark.conf.set("spark.sql.shuffle.partitions", "7")
+    assertEquals(spark.conf.get("spark.sql.shuffle.partitions"), "7")
+    assert(
+      spark.conf.getAll.contains("spark.sql.shuffle.partitions"),
+      "getAll should include a configured key"
+    )
+    assertEquals(spark.conf.get("spark.connect.scala3.nonexistent", "fallback"), "fallback")
+    assertEquals(spark.conf.getOption("spark.connect.scala3.nonexistent"), None)
+    // unset restores the default without error.
+    spark.conf.unset("spark.sql.shuffle.partitions")
+  }
+}
