@@ -78,6 +78,20 @@ class StreamingQueryManager private[sql] (spark: SparkSession) {
   def resetTerminated(): Unit =
     command(_.withResetTerminated(true))
 
+  /**
+   * Registers a [[StreamingQueryListener]] to receive streaming-query lifecycle events. The first
+   * registration opens the server's listener-event stream; events are dispatched on the client.
+   */
+  def addListener(listener: StreamingQueryListener): Unit =
+    spark.streamingQueryListenerBus.add(listener)
+
+  /** Deregisters a previously added [[StreamingQueryListener]]. */
+  def removeListener(listener: StreamingQueryListener): Unit =
+    spark.streamingQueryListenerBus.remove(listener)
+
+  /** Returns the listeners currently registered with this session. */
+  def listListeners(): Array[StreamingQueryListener] = spark.streamingQueryListenerBus.listeners
+
   private def toStreamingQuery(
       instance: proto.StreamingQueryManagerCommandResult.StreamingQueryInstance
   ): StreamingQuery = {

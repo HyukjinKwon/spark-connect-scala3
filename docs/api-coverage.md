@@ -17,7 +17,7 @@ are no surprises.
 | Data sources | `DataFrameReader`/`DataFrameWriter` for CSV, JSON, Parquet, ORC, text, JDBC, and tables, with options, schema, `partitionBy`/`bucketBy`/`sortBy`, save modes, `saveAsTable`/`insertInto`; `DataFrameWriterV2` (`writeTo`) |
 | SQL | `spark.sql(...)` with named and positional parameters; temporary and global temporary views |
 | Catalog | `spark.catalog`: list/inspect catalogs, databases, tables, columns, functions; existence checks; `createTable`/`createExternalTable`; temp-view drops; cache management |
-| Structured Streaming | `DataStreamReader`/`DataStreamWriter`, output modes, triggers (`ProcessingTime`/`Once`/`AvailableNow`/`Continuous`), `start`/`toTable`, `StreamingQuery`, `StreamingQueryManager` |
+| Structured Streaming | `DataStreamReader`/`DataStreamWriter`, output modes, triggers (`ProcessingTime`/`Once`/`AvailableNow`/`Continuous`), `start`/`toTable`, `StreamingQuery`, `StreamingQueryManager`, and `StreamingQueryListener` registration (`addListener`/`removeListener`/`listListeners`) with client-side event dispatch |
 | Declarative Pipelines | build graphs of tables, materialized views, temporary views, sinks, and flows, then run them on the server |
 | Typed Datasets | `as[T]` and `spark.createDataset` with compile-time `Encoder` derivation for case classes, tuples, primitives, `Option`, collections, and maps; typed actions (`collect`/`head`/`first`/`take`/`collectAsList`/`toLocalIterator`) |
 | Observation | `Observation` for collecting named aggregate metrics while a query runs |
@@ -45,8 +45,8 @@ These are deliberately out of scope for now.
 - **MLlib over Connect** (`spark.ml` / `pyspark.ml` equivalent). Experimental
   upstream and not exposed here.
 - **A few niche / advanced APIs**, including artifact upload (`addArtifact`),
-  `MergeIntoWriter`, query/streaming listener registration, and some
-  less-common method overloads and protocol relations/commands.
+  `MergeIntoWriter`, artifact-upload-backed features, and some less-common method
+  overloads and protocol relations/commands.
 
 ## Why these are excluded
 

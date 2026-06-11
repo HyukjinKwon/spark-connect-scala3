@@ -56,6 +56,9 @@ class SparkSession private[sql] (private[sql] val client: SparkConnectClient)
   /** Runtime configuration for Spark. */
   lazy val conf: RuntimeConfig = new RuntimeConfig(client)
 
+  /** Client-side dispatcher backing `spark.streams.addListener(...)`. */
+  private[sql] val streamingQueryListenerBus = new streaming.StreamingQueryListenerBus(this)
+
   /** Implicit conversions (`$"col"`, `Seq(...).toDF(...)`); use `import spark.implicits.*`. */
   object implicits extends SQLImplicits(this)
 
@@ -206,8 +209,10 @@ class SparkSession private[sql] (private[sql] val client: SparkConnectClient)
   def stop(): Unit = close()
 
   override def close(): Unit = {
-    try client.shutdown()
-    finally allocator.close()
+    try {
+      streamingQueryListenerBus.shutdown()
+      client.shutdown()
+    } finally allocator.close()
     SparkSession.clearIfActive(this)
   }
 }

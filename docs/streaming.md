@@ -142,3 +142,32 @@ spark.streams.resetTerminated()
 
 The `foreach` and `foreachBatch` streaming sinks are not supported. Use the
 built-in sinks (`console`, file formats, Kafka, and `toTable`) instead.
+
+## Listening to query events
+
+Register a `StreamingQueryListener` with `spark.streams.addListener(...)` to receive
+streaming-query lifecycle events. Over Spark Connect the server forwards serialized
+events on a dedicated stream and the client invokes your listener locally, so no
+user code runs on the server (unlike `foreach`/`foreachBatch`).
+
+```scala
+import org.apache.spark.sql.streaming.StreamingQueryListener
+
+val listener = new StreamingQueryListener {
+  def onQueryStarted(e: StreamingQueryListener.QueryStartedEvent): Unit =
+    println(s"started ${e.id} (${e.name})")
+  def onQueryProgress(e: StreamingQueryListener.QueryProgressEvent): Unit =
+    println(e.json) // Spark's StreamingQueryProgress JSON
+  def onQueryTerminated(e: StreamingQueryListener.QueryTerminatedEvent): Unit =
+    println(s"terminated ${e.id} ${e.exception.getOrElse("")}")
+}
+
+spark.streams.addListener(listener)
+// ... start and run queries ...
+spark.streams.listListeners()      // Array(listener)
+spark.streams.removeListener(listener)
+```
+
+Each event exposes the full server-side payload as `event.json`; the started, idle,
+and terminated events also expose parsed `id` / `runId` (and `name` / `exception`)
+accessors.

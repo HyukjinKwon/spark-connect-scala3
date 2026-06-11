@@ -77,7 +77,7 @@ Also out of scope because they are not part of the Spark Connect protocol at all
 | [Data Sources](data-sources.md) | Reading and writing files and tables |
 | [SQL](sql.md) | Running SQL and using views |
 | [Catalog](catalog.md) | Inspecting and managing metadata |
-| [Structured Streaming](streaming.md) | Streaming sources, sinks, and queries |
+| [Structured Streaming](streaming.md) | Streaming sources, sinks, queries, and query listeners |
 | [Declarative Pipelines](pipelines.md) | Dataflow graphs |
 | [Configuration and Connection](configuration.md) | Connection strings and runtime config |
 | [Examples](examples.md) | Runnable programs |

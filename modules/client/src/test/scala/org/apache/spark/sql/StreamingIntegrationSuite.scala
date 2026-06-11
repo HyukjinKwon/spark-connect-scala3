@@ -77,4 +77,39 @@ class StreamingIntegrationSuite extends munit.FunSuite {
       assert(spark.streams.active.exists(_.name == "sc3_active") || query.isActive)
     } finally query.stop()
   }
+
+  test("StreamingQueryListener receives events and can be removed") {
+    import org.apache.spark.sql.streaming.StreamingQueryListener
+    import java.util.concurrent.atomic.AtomicInteger
+    val events = new AtomicInteger(0)
+    val listener = new StreamingQueryListener {
+      def onQueryStarted(e: StreamingQueryListener.QueryStartedEvent): Unit =
+        events.incrementAndGet()
+      def onQueryProgress(e: StreamingQueryListener.QueryProgressEvent): Unit =
+        events.incrementAndGet()
+      def onQueryTerminated(e: StreamingQueryListener.QueryTerminatedEvent): Unit =
+        events.incrementAndGet()
+    }
+    spark.streams.addListener(listener)
+    try {
+      assertEquals(spark.streams.listListeners().length, 1)
+      val query = spark.readStream
+        .format("rate")
+        .option("rowsPerSecond", 5)
+        .load()
+        .writeStream
+        .format("memory")
+        .queryName("sc3_listener")
+        .start()
+      try {
+        var waited = 0
+        while (events.get() < 1 && waited < 30) { Thread.sleep(1000); waited += 1 }
+      } finally query.stop()
+      Thread.sleep(2000)
+      assert(events.get() >= 1, s"expected at least one streaming event, got ${events.get()}")
+    } finally {
+      spark.streams.removeListener(listener)
+      assertEquals(spark.streams.listListeners().length, 0)
+    }
+  }
 }
