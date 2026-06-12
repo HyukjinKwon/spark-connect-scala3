@@ -38,6 +38,11 @@ object DeclarativePipeline {
     val storage = if (args.length > 1) args(1) else "file:///tmp/sc3-pipeline-storage"
     val spark = SparkSession.builder.remote(remote).appName("declarative-pipeline").getOrCreate()
     try {
+      // The pipeline materializes managed tables; drop any from a previous run so the example
+      // is idempotent (managed-table locations cannot be recreated while they still exist).
+      spark.sql("DROP TABLE IF EXISTS evens")
+      spark.sql("DROP TABLE IF EXISTS numbers")
+
       val pipe = spark.pipeline()
       pipe.createMaterializedView("numbers", Some(spark.range(0, 100)))
       pipe.createMaterializedView("evens", Some(pipe.read("numbers").where(col("id") % 2 === 0)))

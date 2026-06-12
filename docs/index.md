@@ -58,7 +58,7 @@ The following all require running a user-provided JVM closure on the server (the
 Also out of scope because they are not part of the Spark Connect protocol at all:
 
 - The **RDD API** (`Dataset.rdd`, `SparkContext`, accumulators, broadcast variables).
-- The experimental **MLlib-over-Connect** surface.
+- The **MLlib-over-Connect** surface.
 
 ## Project facts
 

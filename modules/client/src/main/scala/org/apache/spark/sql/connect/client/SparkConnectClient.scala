@@ -279,8 +279,13 @@ class SparkConnectClient private[sql] (
     new SparkConnectClient(configuration.copy(sessionId = None), channel)
 
   def shutdown(): Unit = {
-    channel.shutdownNow()
-    channel.awaitTermination(10, TimeUnit.SECONDS)
+    // Try a graceful shutdown first so in-flight RPCs can finish and the server can release
+    // their execution state; fall back to a forced shutdown if they do not drain in time.
+    channel.shutdown()
+    if (!channel.awaitTermination(10, TimeUnit.SECONDS)) {
+      channel.shutdownNow()
+      channel.awaitTermination(5, TimeUnit.SECONDS)
+    }
   }
 }
 

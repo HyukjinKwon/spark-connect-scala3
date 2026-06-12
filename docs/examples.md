@@ -20,6 +20,19 @@ sbt "examples/runMain examples.JoinExample sc://localhost:15002"
 | `Aggregations` | Grouped aggregation with several aggregate functions. |
 | `JoinExample` | Joining two DataFrames and aggregating the result. |
 | `WordCount` | Split and explode text, then group and count. |
+| `SqlAndViews` | Mix the DataFrame API with raw SQL through temporary views, including parameterised SQL. |
+| `WindowFunctions` | Window functions: per-department salary ranking and running totals. |
+| `ReadWrite` | Round-trip a DataFrame through Parquet on the server's filesystem. |
+| `StructuredStreaming` | Read the built-in `rate` source, transform it, write to the in-memory sink, and query the sink. |
+| `DeclarativePipeline` | Build and run a Spark Declarative Pipelines dataflow graph (requires an Apache Spark 4.1+ server). |
+| `Smoke` | A minimal end-to-end check against a live Spark Connect server. |
+
+Run any of them by name, for example:
+
+```bash
+sbt "examples/runMain examples.WindowFunctions"
+sbt "examples/runMain examples.StructuredStreaming"
+```
 
 ## QuickStart
 

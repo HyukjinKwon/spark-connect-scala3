@@ -129,7 +129,7 @@ same mechanism as a UDF), which Spark Connect for Scala 3 does not provide:
 Also out of scope because they are not part of the Spark Connect protocol at all:
 
 - The RDD API (`Dataset.rdd`, `SparkContext`, accumulators, broadcast variables).
-- The experimental MLlib-over-Connect surface.
+- The MLlib-over-Connect surface.
 
 Class and method names otherwise match Apache Spark's Scala API, so existing Spark
 Scala code ports almost verbatim.

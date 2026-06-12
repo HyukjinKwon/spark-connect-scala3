@@ -50,7 +50,9 @@ object StructuredStreaming {
         .trigger(Trigger.ProcessingTime("1 second"))
         .start()
 
-      // Wait for a batch of data, then inspect the in-memory sink as a table.
+      // The rate source emits rows as wall-clock time passes, so give it a moment to produce
+      // some before draining: processAllAvailable() commits whatever is available right now.
+      Thread.sleep(2000)
       query.processAllAvailable()
       spark
         .sql("SELECT bucket, count(*) AS n FROM rates GROUP BY bucket ORDER BY bucket")

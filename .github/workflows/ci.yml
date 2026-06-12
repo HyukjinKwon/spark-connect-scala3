@@ -126,17 +126,22 @@ jobs:
 
       - name: Start Spark Connect server
         run: |
+          set -euo pipefail
           # On Spark 4.0+ the Connect server is bundled (matrix.packages is empty).
           # On Spark 3.5.x it is pulled in via --packages (matrix.packages).
           ~/spark/sbin/start-connect-server.sh ${{ matrix.packages }} --conf spark.log.level=WARN
-          # Wait for the gRPC port to accept connections.
+          # Wait for the gRPC port to accept connections, and fail the job if it never does
+          # (otherwise the integration tests would fail later with an opaque connection error).
           for i in $(seq 1 60); do
             if bash -c "</dev/tcp/localhost/15002" 2>/dev/null; then
               echo "Spark Connect server is up"
-              break
+              exit 0
             fi
             sleep 2
           done
+          echo "Spark Connect server did not become reachable on sc://localhost:15002" >&2
+          tail -n 200 ~/spark/logs/*.out 2>/dev/null || true
+          exit 1
 
       - name: Run integration tests
         env:

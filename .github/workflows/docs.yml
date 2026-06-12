@@ -52,8 +52,16 @@ jobs:
 
       - name: Copy Scaladoc into the site
         run: |
+          set -euo pipefail
           mkdir -p site/api
-          cp -r modules/client/target/scala-3.3.6/api/. site/api/
+          # Resolve the Scaladoc output dir rather than hardcoding the Scala version,
+          # so a scalaVersion bump in build.sbt does not silently drop the API docs.
+          api_dir=$(find modules/client/target -type d -path '*/api' -print -quit)
+          if [ -z "$api_dir" ]; then
+            echo "Scaladoc output not found under modules/client/target" >&2
+            exit 1
+          fi
+          cp -r "$api_dir"/. site/api/
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
