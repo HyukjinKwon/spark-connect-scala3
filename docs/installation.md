@@ -114,25 +114,43 @@ spark.stop()
 
 ## Try it in a Scala REPL
 
-With a Connect server running, the quickest way to explore is
-`bin/spark-connect-shell` - this repository's equivalent of Spark's
-`./bin/spark-shell`. It opens a Scala REPL with the client on the classpath and a
-`spark` session already connected and ready (it also opens the Arrow JDK modules
-for you, so you do not need the flags above):
+With a Connect server running, the quickest way to explore is a plain Scala REPL
+with the client on the classpath. Any REPL works; the examples below use
+[scala-cli](https://scala-cli.virtuslab.org/) and [Ammonite](https://ammonite.io/).
+Apache Arrow needs two JDK modules opened on the REPL's JVM (see
+[the flags above](#jvm-flags-for-apache-arrow)).
+
+### scala-cli
 
 ```bash
-# Defaults to sc://localhost:15002
-bin/spark-connect-shell
-
-# Or point it at any Spark Connect server (a positional sc://... argument or the
-# SPARK_REMOTE environment variable also work):
-bin/spark-connect-shell --remote sc://my-host:15002
+scala-cli repl \
+  --dep com.github.hyukjinkwon::spark-connect-scala3-client:0.1.0 \
+  --java-opt --add-opens=java.base/java.nio=ALL-UNNAMED \
+  --java-opt --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
 ```
 
-You land at a `scala>` prompt with `spark` and `spark.implicits._` already in
-scope:
+### Ammonite
+
+```bash
+JAVA_OPTS="--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED" amm
+```
 
 ```scala
+import $ivy.`com.github.hyukjinkwon::spark-connect-scala3-client:0.1.0`
+```
+
+### Connect a session and explore
+
+In either REPL, build a `SparkSession` pointed at your server and go (swap in your
+own `sc://host:port`):
+
+```scala
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions.*
+
+val spark = SparkSession.builder.remote("sc://localhost:15002").getOrCreate()
+import spark.implicits.*
+
 spark.range(1, 6).select($"id", ($"id" * $"id").as("square")).show()
 
 Seq(("a", 1), ("b", 2), ("a", 3))
@@ -141,9 +159,8 @@ Seq(("a", 1), ("b", 2), ("a", 3))
   .agg(sum($"value").as("total"))
   .orderBy($"key")
   .show()
-```
 
-Type `:quit` to exit. The script uses `sbt client/console`, so `sbt` is the only
-prerequisite and the client is built on first run.
+spark.stop()
+```
 
 Continue with the [Quickstart](quickstart.md).

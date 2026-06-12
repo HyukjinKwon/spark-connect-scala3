@@ -115,8 +115,10 @@ lazy val client = (project in file("modules/client"))
       "org.scalameta" %% "munit" % "1.0.2" % Test
     ),
     testFrameworks += new TestFramework("munit.Framework"),
-    // Powers `bin/spark-connect-shell`: `sbt client/console` opens a REPL with a `spark`
-    // session already connected to the address in the `spark.connect.shell.remote` property.
+    // Dev convenience: `sbt client/console` opens a REPL with a `spark` session already
+    // connected to the address in the `spark.connect.shell.remote` system property
+    // (defaults to sc://localhost:15002). End users get a REPL via scala-cli/Ammonite
+    // with the published artifact - see the "Interactive shell" docs.
     Compile / console / initialCommands := {
       val remote = sys.props.getOrElse("spark.connect.shell.remote", "sc://localhost:15002")
       s"""import org.apache.spark.sql.SparkSession

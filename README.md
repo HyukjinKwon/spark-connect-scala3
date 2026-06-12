@@ -91,14 +91,24 @@ On **Spark 3.5.x** the Connect server is not bundled. Use a Scala 2.13 distribut
 
 ## Interactive shell
 
-`bin/spark-connect-shell` is this project's `./bin/spark-shell` equivalent: it opens a Scala REPL with a `spark` session already connected (and `spark.implicits._` in scope).
+Use any Scala REPL with the client as a dependency. With
+[scala-cli](https://scala-cli.virtuslab.org/):
 
 ```bash
-bin/spark-connect-shell --remote sc://localhost:15002
+scala-cli repl \
+  --dep com.github.hyukjinkwon::spark-connect-scala3-client:0.1.0 \
+  --java-opt --add-opens=java.base/java.nio=ALL-UNNAMED \
+  --java-opt --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
 ```
 
+Then connect a session and explore:
+
 ```scala
-scala> spark.range(1, 6).select($"id", ($"id" * $"id").as("square")).show()
+import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions.*
+val spark = SparkSession.builder.remote("sc://localhost:15002").getOrCreate()
+import spark.implicits.*
+spark.range(1, 6).select($"id", ($"id" * $"id").as("square")).show()
 ```
 
 ## What it supports
