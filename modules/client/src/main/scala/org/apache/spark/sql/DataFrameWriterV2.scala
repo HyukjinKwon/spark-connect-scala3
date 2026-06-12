@@ -79,11 +79,15 @@ final class DataFrameWriterV2 private[sql] (table: String, ds: Dataset[?]) {
   def overwritePartitions(): Unit =
     run(proto.WriteOperationV2.Mode.MODE_OVERWRITE_PARTITIONS)
 
-  private def run(
+  /**
+   * Builds the `WriteOperationV2` command for the given mode. Extracted from [[run]] so the command
+   * wiring can be unit-tested without a server.
+   */
+  private[sql] def buildWriteOperation(
       mode: proto.WriteOperationV2.Mode,
       overwriteCondition: Option[proto.Expression] = None
-  ): Unit = {
-    val writeOp = proto.WriteOperationV2(
+  ): proto.WriteOperationV2 =
+    proto.WriteOperationV2(
       input = Some(ds.relation),
       tableName = table,
       provider = provider,
@@ -94,8 +98,14 @@ final class DataFrameWriterV2 private[sql] (table: String, ds: Dataset[?]) {
       mode = mode,
       overwriteCondition = overwriteCondition
     )
+
+  private def run(
+      mode: proto.WriteOperationV2.Mode,
+      overwriteCondition: Option[proto.Expression] = None
+  ): Unit =
     ds.sparkSession.executeCommand(
-      proto.Command(commandType = proto.Command.CommandType.WriteOperationV2(writeOp))
+      proto.Command(commandType =
+        proto.Command.CommandType.WriteOperationV2(buildWriteOperation(mode, overwriteCondition))
+      )
     )
-  }
 }
