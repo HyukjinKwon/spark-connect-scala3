@@ -15,20 +15,20 @@ fully qualified Maven artifact id is `spark-connect-scala3-client_3`.
 sbt (`build.sbt`):
 
 ```scala
-libraryDependencies += "io.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.1.0"
+libraryDependencies += "com.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.1.0"
 ```
 
 sbt with an explicit Scala suffix:
 
 ```scala
-libraryDependencies += "io.github.hyukjinkwon" % "spark-connect-scala3-client_3" % "0.1.0"
+libraryDependencies += "com.github.hyukjinkwon" % "spark-connect-scala3-client_3" % "0.1.0"
 ```
 
 Maven (`pom.xml`):
 
 ```xml
 <dependency>
-  <groupId>io.github.hyukjinkwon</groupId>
+  <groupId>com.github.hyukjinkwon</groupId>
   <artifactId>spark-connect-scala3-client_3</artifactId>
   <version>0.1.0</version>
 </dependency>
@@ -37,17 +37,17 @@ Maven (`pom.xml`):
 Gradle (`build.gradle.kts`):
 
 ```kotlin
-implementation("io.github.hyukjinkwon:spark-connect-scala3-client_3:0.1.0")
+implementation("com.github.hyukjinkwon:spark-connect-scala3-client_3:0.1.0")
 ```
 
 Mill (`build.sc`):
 
 ```scala
-ivy"io.github.hyukjinkwon::spark-connect-scala3-client:0.1.0"
+ivy"com.github.hyukjinkwon::spark-connect-scala3-client:0.1.0"
 ```
 
 The published versions are listed on the
-[Maven Central page](https://central.sonatype.com/artifact/io.github.hyukjinkwon/spark-connect-scala3-client_3).
+[Maven Central page](https://central.sonatype.com/artifact/com.github.hyukjinkwon/spark-connect-scala3-client_3).
 
 ## JVM flags for Apache Arrow
 
