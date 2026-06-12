@@ -151,8 +151,9 @@ private[sql] object SparkResult {
       case v: TimeStampMicroVector => microsToLocalDateTime(v.get(i))
       case v: DurationVector => v.getObject(i)
       case v: NullVector => null
+      // MapVector extends ListVector, so it must be matched first.
+      case v: MapVector => mapValue(v, i)
       case v: ListVector => normalize(v.getObject(i))
-      case v: MapVector => normalize(v.getObject(i))
       case v: StructVector => structValue(v, i)
       case other => normalize(other.getObject(i))
     }
@@ -172,6 +173,26 @@ private[sql] object SparkResult {
     val children = vector.getChildrenFromFields.asScala
     val values = children.map(child => getValue(child, i)).toArray[Any]
     Row.fromSeq(values.toIndexedSeq)
+  }
+
+  /**
+   * Decodes a map cell. A [[MapVector]] is a list of `key`/`value` entry structs; we walk the entry
+   * range for row `i` and decode each key and value with [[getValue]] so that nested key/value
+   * types are handled, building an insertion-ordered Scala [[Map]].
+   */
+  private def mapValue(vector: MapVector, i: Int): Any = {
+    val struct = vector.getDataVector.asInstanceOf[StructVector]
+    val keyVector = struct.getChild(MapVector.KEY_NAME)
+    val valueVector = struct.getChild(MapVector.VALUE_NAME)
+    val builder = scala.collection.mutable.LinkedHashMap.empty[Any, Any]
+    val start = vector.getElementStartIndex(i)
+    val end = vector.getElementEndIndex(i)
+    var p = start
+    while (p < end) {
+      builder += (getValue(keyVector, p) -> getValue(valueVector, p))
+      p += 1
+    }
+    builder.toMap
   }
 
   /** Recursively converts Arrow's Java result objects (Text, List, Map) into Scala values. */

@@ -27,7 +27,6 @@ import scala.jdk.CollectionConverters._
 import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.vector._
 import org.apache.arrow.vector.complex.{ListVector, MapVector, StructVector}
-import org.apache.arrow.vector.complex.impl.UnionMapWriter
 import org.apache.arrow.vector.ipc.ArrowStreamWriter
 import org.apache.arrow.vector.types.{DateUnit, FloatingPointPrecision, TimeUnit}
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType, Schema}
@@ -201,12 +200,13 @@ object ArrowSerializer {
       case v: DecimalVector =>
         // DecimalVector.setSafe(int, BigDecimal) rescales to the vector's declared scale.
         v.setSafe(i, toBigDecimal(value))
+      // MapVector extends ListVector, so it must be matched first.
+      case v: MapVector =>
+        setMap(v, i, value, dataType.asInstanceOf[MapType])
       case v: ListVector =>
         setList(v, i, value, dataType.asInstanceOf[ArrayType])
       case v: StructVector =>
         setStruct(v, i, value, dataType.asInstanceOf[StructType])
-      case v: MapVector =>
-        setMap(v, i, value, dataType.asInstanceOf[MapType])
       case other =>
         throw new UnsupportedOperationException(
           s"Cannot set value into Arrow vector of type ${other.getClass.getName}"
@@ -229,9 +229,10 @@ object ArrowSerializer {
     case v: TimeStampMicroTZVector => v.setNull(i)
     case v: TimeStampMicroVector => v.setNull(i)
     case v: DecimalVector => v.setNull(i)
+    // MapVector extends ListVector, so it must be matched first.
+    case v: MapVector => v.setNull(i)
     case v: ListVector => v.setNull(i)
     case v: StructVector => v.setNull(i)
-    case v: MapVector => v.setNull(i)
     case v: BaseFixedWidthVector => v.setNull(i)
     case v: BaseVariableWidthVector => v.setNull(i)
     case _ =>
@@ -285,44 +286,25 @@ object ArrowSerializer {
           s"Cannot encode value of type ${other.getClass.getName} as a MapType"
         )
     }
-    val writer: UnionMapWriter = vector.getWriter
-    writer.setPosition(index)
-    writer.startMap()
+    // A MapVector is a ListVector whose data vector is a StructVector with `key` and `value`
+    // children. Populate the children directly (mirroring setList/setStruct) rather than via
+    // UnionMapWriter, which leaves the vector value counts in a state that does not round-trip
+    // through the Arrow IPC stream.
+    val start = vector.startNewValue(index)
+    val struct = vector.getDataVector.asInstanceOf[StructVector]
+    val keyVector = struct.getChild(MapVector.KEY_NAME)
+    val valueVector = struct.getChild(MapVector.VALUE_NAME)
+    var pos = start
     entries.foreach { case (k, v) =>
-      writer.startEntry()
-      writeScalar(writer.key(), k, mapType.keyType)
-      writeScalar(writer.value(), v, mapType.valueType)
-      writer.endEntry()
+      struct.setIndexDefined(pos)
+      setValue(keyVector, pos, k, mapType.keyType)
+      setValue(valueVector, pos, v, mapType.valueType)
+      pos += 1
     }
-    writer.endMap()
-  }
-
-  /**
-   * Writes a scalar key/value into a map-entry writer. Only the primitive/string/binary cases that
-   * map writers expose directly are supported here; richer nesting inside maps is intentionally out
-   * of scope for this best-effort path.
-   */
-  private def writeScalar(
-      writer: org.apache.arrow.vector.complex.writer.BaseWriter,
-      value: Any,
-      dataType: DataType
-  ): Unit = {
-    import org.apache.arrow.vector.complex.writer._
-    (writer, dataType) match {
-      case (w: BitWriter, BooleanType) => w.writeBit(if (toBoolean(value)) 1 else 0)
-      case (w: TinyIntWriter, ByteType) => w.writeTinyInt(toByte(value))
-      case (w: SmallIntWriter, ShortType) => w.writeSmallInt(toShort(value))
-      case (w: IntWriter, IntegerType) => w.writeInt(toInt(value))
-      case (w: BigIntWriter, LongType) => w.writeBigInt(toLong(value))
-      case (w: Float4Writer, FloatType) => w.writeFloat4(toFloat(value))
-      case (w: Float8Writer, DoubleType) => w.writeFloat8(toDouble(value))
-      case (w: VarCharWriter, _) =>
-        w.writeVarChar(value.toString)
-      case (other, _) =>
-        throw new UnsupportedOperationException(
-          s"Unsupported map scalar writer ${other.getClass.getName} for type ${dataType.simpleString}"
-        )
-    }
+    vector.endValue(index, entries.size)
+    struct.setValueCount(pos)
+    keyVector.setValueCount(pos)
+    valueVector.setValueCount(pos)
   }
 
   // ---------------------------------------------------------------------------

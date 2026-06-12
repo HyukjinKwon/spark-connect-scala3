@@ -83,10 +83,12 @@ object Encoder {
   private[sql] def atomic[T](
       dt: DataType,
       from: Any => T,
-      to: T => Any = (t: T) => t.asInstanceOf[Any]
+      to: T => Any = (t: T) => t.asInstanceOf[Any],
+      isNullable: Boolean = false
   )(using ct: ClassTag[T]): Encoder[T] =
     new Encoder[T] {
       override def dataType: DataType = dt
+      override def nullable: Boolean = isNullable
       override def classTag: ClassTag[T] = ct
       override private[sql] def fromValue(value: Any): T = from(value)
       override private[sql] def toValue(value: T): Any = to(value)
@@ -103,23 +105,34 @@ object Encoder {
   given Encoder[Double] = atomic(DoubleType, v => num(v).doubleValue)
   given Encoder[Float] = atomic(FloatType, v => num(v).floatValue)
   given Encoder[Boolean] = atomic(BooleanType, v => v.asInstanceOf[Boolean])
-  given Encoder[String] = atomic(StringType, v => if (v == null) null else v.toString)
-  given Encoder[Array[Byte]] = atomic(BinaryType, v => v.asInstanceOf[Array[Byte]])
+  // Reference-typed atomics admit null (matching Spark, where only JVM primitives are non-nullable).
+  given Encoder[String] =
+    atomic(StringType, v => if (v == null) null else v.toString, isNullable = true)
+  given Encoder[Array[Byte]] =
+    atomic(BinaryType, v => v.asInstanceOf[Array[Byte]], isNullable = true)
   given javaBigDecimalEncoder: Encoder[java.math.BigDecimal] =
-    atomic(DecimalType.SYSTEM_DEFAULT, v => v.asInstanceOf[java.math.BigDecimal])
+    atomic(
+      DecimalType.SYSTEM_DEFAULT,
+      v => v.asInstanceOf[java.math.BigDecimal],
+      isNullable = true
+    )
   given scalaBigDecimalEncoder: Encoder[BigDecimal] =
     atomic(
       DecimalType.SYSTEM_DEFAULT,
       v => BigDecimal(v.asInstanceOf[java.math.BigDecimal]),
-      (b: BigDecimal) => b.bigDecimal
+      (b: BigDecimal) => b.bigDecimal,
+      isNullable = true
     )
-  given Encoder[java.sql.Date] = atomic(DateType, v => v.asInstanceOf[java.sql.Date])
-  given Encoder[java.time.LocalDate] = atomic(DateType, v => v.asInstanceOf[java.time.LocalDate])
+  given Encoder[java.sql.Date] =
+    atomic(DateType, v => v.asInstanceOf[java.sql.Date], isNullable = true)
+  given Encoder[java.time.LocalDate] =
+    atomic(DateType, v => v.asInstanceOf[java.time.LocalDate], isNullable = true)
   given Encoder[java.sql.Timestamp] =
-    atomic(TimestampType, v => v.asInstanceOf[java.sql.Timestamp])
-  given Encoder[java.time.Instant] = atomic(TimestampType, v => v.asInstanceOf[java.time.Instant])
+    atomic(TimestampType, v => v.asInstanceOf[java.sql.Timestamp], isNullable = true)
+  given Encoder[java.time.Instant] =
+    atomic(TimestampType, v => v.asInstanceOf[java.time.Instant], isNullable = true)
   given Encoder[java.time.LocalDateTime] =
-    atomic(TimestampNTZType, v => v.asInstanceOf[java.time.LocalDateTime])
+    atomic(TimestampNTZType, v => v.asInstanceOf[java.time.LocalDateTime], isNullable = true)
 
   /** Identity encoder used for `Dataset[Row]` (DataFrames). */
   private[sql] val rowEncoder: Encoder[Row] = new Encoder[Row] {
