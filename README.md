@@ -156,11 +156,3 @@ for the exact breakdown.
 Full documentation, including guides for every part of the API and the generated Scaladoc, lives at **<https://hyukjinkwon.github.io/spark-connect-scala3/>**.
 
 Runnable programs under [`modules/examples/`](modules/examples/) cover the quickstart, aggregations, joins, word count, SQL and views, window functions, reading and writing, Structured Streaming, and Declarative Pipelines.
-
-## Contributing
-
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build the project, run the unit and integration tests, and follow the code style.
-
-## License
-
-`spark-connect-scala3` is licensed under the [Apache License 2.0](LICENSE). It vendors the Spark Connect protobuf definitions from Apache Spark; see [NOTICE](NOTICE) for attribution.
