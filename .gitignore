@@ -11,6 +11,5 @@ project/project/
 *.log
 .sbtopts
 
-# Local-only inter-agent coordination and scratch (never published).
 .team/
 .hjk_work/
