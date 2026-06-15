@@ -40,12 +40,12 @@ spark.stop()
 
 ## Installation
 
-The current release is `0.1.0`, published for **Scala 3.3.x** (the Scala 3 LTS line), running on **JDK 17 or newer**.
+The current release is `0.2.0`, published for **Scala 3.3.x** (the Scala 3 LTS line), running on **JDK 17 or newer**.
 
 sbt (`build.sbt`):
 
 ```scala
-libraryDependencies += "com.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.1.0"
+libraryDependencies += "com.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.2.0"
 ```
 
 Maven (`pom.xml`) - Scala 3 artifacts use the `_3` suffix:
@@ -54,14 +54,14 @@ Maven (`pom.xml`) - Scala 3 artifacts use the `_3` suffix:
 <dependency>
   <groupId>com.github.hyukjinkwon</groupId>
   <artifactId>spark-connect-scala3-client_3</artifactId>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
 </dependency>
 ```
 
 Gradle (`build.gradle.kts`):
 
 ```kotlin
-implementation("com.github.hyukjinkwon:spark-connect-scala3-client_3:0.1.0")
+implementation("com.github.hyukjinkwon:spark-connect-scala3-client_3:0.2.0")
 ```
 
 See the [Installation guide](https://hyukjinkwon.github.io/spark-connect-scala3/installation/) for Mill, the JVM flags Apache Arrow needs on JDK 17+, and how to start a Spark Connect server.
@@ -96,7 +96,7 @@ Use any Scala REPL with the client as a dependency. With
 
 ```bash
 scala-cli repl \
-  --dep com.github.hyukjinkwon::spark-connect-scala3-client:0.1.0 \
+  --dep com.github.hyukjinkwon::spark-connect-scala3-client:0.2.0 \
   --java-opt --add-opens=java.base/java.nio=ALL-UNNAMED \
   --java-opt --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
 ```

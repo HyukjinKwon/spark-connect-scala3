@@ -20,7 +20,7 @@ ThisBuild / organization := "com.github.hyukjinkwon"
 ThisBuild / organizationName := "Hyukjin Kwon"
 ThisBuild / scalaVersion := "3.3.6"
 // Version is derived from git tags by sbt-dynver (via sbt-ci-release): a tag like
-// `v0.1.0` publishes `0.1.0`; untagged builds get a `-SNAPSHOT` version.
+// `vX.Y.Z` publishes `X.Y.Z`; untagged builds get a `-SNAPSHOT` version.
 ThisBuild / versionScheme := Some("early-semver")
 // Publish through the Sonatype Central Portal (central.sonatype.com). The legacy
 // OSSRH hosts (oss.sonatype.org / s01.oss.sonatype.org) were sunset in 2025, so new

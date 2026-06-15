@@ -42,9 +42,9 @@ grand total = 499500
 - The dependency line is the only thing your own project needs:
 
   ```scala
-  libraryDependencies += "com.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.1.0"
+  libraryDependencies += "com.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.2.0"
   ```
 
-- Trying it before `0.1.0` is on Maven Central? Publish the client locally first - from
+- Trying it before `0.2.0` is on Maven Central? Publish the client locally first - from
   the repository root run `sbt publishLocal`, then set the version here to the locally
   published one.

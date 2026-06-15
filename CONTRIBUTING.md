@@ -104,11 +104,11 @@ One-time setup:
 Cut a release:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag vX.Y.Z
+git push origin vX.Y.Z
 ```
 
-`sbt-ci-release` derives the version from the tag (`v0.1.0` -> `0.1.0`). Pushing to
+`sbt-ci-release` derives the version from the tag (`vX.Y.Z` -> `X.Y.Z`). Pushing to
 `main` without a tag publishes a `-SNAPSHOT`. The workflow can also be run manually
 from the Actions tab (publishes a snapshot when not triggered by a tag).
 

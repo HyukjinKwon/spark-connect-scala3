@@ -3,9 +3,9 @@ name: Release
 # Publishes the artifacts to Maven Central (via the Sonatype Central Portal) and
 # creates a GitHub Release. Triggered by pushing a version tag, e.g.:
 #
-#     git tag v0.1.0 && git push origin v0.1.0
+#     git tag vX.Y.Z && git push origin vX.Y.Z
 #
-# sbt-ci-release derives the published version from the tag: `v0.1.0` -> `0.1.0`.
+# sbt-ci-release derives the published version from the tag: `vX.Y.Z` -> `X.Y.Z`.
 # A manual run (workflow_dispatch) without a tag publishes a -SNAPSHOT instead.
 #
 # Required repository secrets (Settings -> Secrets and variables -> Actions):
