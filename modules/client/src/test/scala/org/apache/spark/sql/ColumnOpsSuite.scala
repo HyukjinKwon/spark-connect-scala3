@@ -45,6 +45,44 @@ class ColumnOpsSuite extends munit.FunSuite {
     Seq(a && b, a || b, a.and(b), a.or(b), !a).foreach(c => assert(defined(c)))
   }
 
+  test("comparison/boolean operators map to the exact function names (no inversion)") {
+    assertEquals(fname(a === b), "==")
+    assertEquals(fname(a =!= b), "!=")
+    assertEquals(fname(a.notEqual(b)), "!=")
+    assertEquals(fname(a < b), "<")
+    assertEquals(fname(a <= b), "<=")
+    assertEquals(fname(a > b), ">")
+    assertEquals(fname(a >= b), ">=")
+    assertEquals(fname(a <=> b), "<=>")
+    assertEquals(fname(a.eqNullSafe(b)), "<=>")
+    assertEquals(fname(a && b), "and")
+    assertEquals(fname(a || b), "or")
+    assertEquals(fname(!a), "not")
+    assertEquals(fname(-a), "negative")
+  }
+
+  test("arithmetic and bitwise operators map to the exact function names") {
+    assertEquals(fname(a - b), "-")
+    assertEquals(fname(a / b), "/")
+    assertEquals(fname(a % b), "%")
+    assertEquals(fname(a.bitwiseAND(b)), "&")
+    assertEquals(fname(a.bitwiseOR(b)), "|")
+    assertEquals(fname(a.bitwiseXOR(b)), "^")
+  }
+
+  test("string and null predicates map to the exact function names") {
+    assertEquals(fname(a.like("x%")), "like")
+    assertEquals(fname(a.rlike("x.*")), "rlike")
+    assertEquals(fname(a.ilike("X%")), "ilike")
+    assertEquals(fname(a.contains("x")), "contains")
+    assertEquals(fname(a.startsWith("x")), "startswith")
+    assertEquals(fname(a.endsWith("x")), "endswith")
+    assertEquals(fname(a.isNull), "isNull")
+    assertEquals(fname(a.isNotNull), "isNotNull")
+    assertEquals(fname(a.isNaN), "isNaN")
+    assertEquals(fname(a.isin(1, 2, 3)), "in")
+  }
+
   test("predicates") {
     Seq(
       a.isNull,

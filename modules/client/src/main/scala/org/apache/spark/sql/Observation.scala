@@ -118,6 +118,11 @@ class Observation(val name: String) {
   // Guards single-attachment of this Observation to a Dataset.
   private val lock = new Object
 
+  // True once this Observation instance has been attached to a Dataset. The single-use check is
+  // per-instance (not a global name lookup) so a fresh Observation may reuse a name already seen
+  // elsewhere in the JVM, e.g. when the same query is run again.
+  @volatile private var attached: Boolean = false
+
   /**
    * The observed metric values. Blocks until the metrics are available, i.e. until an action has
    * been executed on the Dataset this Observation was attached to and the response stream has been
@@ -147,9 +152,10 @@ class Observation(val name: String) {
    */
   private[sql] def markObserved(ds: Dataset[?], exprs: Seq[Column]): proto.CollectMetrics =
     lock.synchronized {
-      if (Observation.lookup(name).isDefined) {
+      if (attached) {
         throw new IllegalArgumentException("An Observation can be used with a Dataset only once")
       }
+      attached = true
       Observation.register(name, this)
       proto.CollectMetrics(input = Some(ds.relation), name = name, metrics = exprs.map(_.expr))
     }

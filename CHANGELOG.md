@@ -3,6 +3,27 @@
 All notable changes to this project are documented in this file. The format is
 based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [0.2.0] - 2026-06-15
+
+### Fixed
+
+- `YearMonthIntervalType` and `DayTimeIntervalType` now render their actual field
+  range (e.g. `interval month`, `interval hour to minute`) instead of always
+  reporting `interval year to month` / `interval day to second`.
+- `DecimalType` now carries its precision and scale through `typeName`, so
+  `printSchema` / `StructType.treeString` show `decimal(p,s)` rather than a bare
+  `decimal`.
+- `Observation`'s single-use check is now per-instance rather than keyed on a
+  process-global name registry, so a fresh `Observation` may reuse a name that was
+  already seen elsewhere in the JVM (for example, when re-running the same query).
+
+### Changed
+
+- Expanded the hermetic (server-free) unit test suite covering the type hierarchy,
+  metadata, encoders, `Row`, window frames, offline plan building, and the
+  multi-argument `functions` entry points, substantially raising client test
+  coverage.
+
 ## [0.1.0] - 2026-06-11
 
 Initial release of Spark Connect for Scala 3: a pure Scala 3 client for the

@@ -136,7 +136,9 @@ case object VariantType extends AtomicType { override def defaultSize: Int = 204
 /** A decimal type with the given precision and scale. */
 case class DecimalType(precision: Int, scale: Int) extends NumericType {
   override def defaultSize: Int = if (precision <= 18) 8 else 16
-  override def simpleString: String = s"decimal($precision,$scale)"
+  // typeName (not just simpleString) carries the precision/scale so that treeString /
+  // printSchema render `decimal(10,0)` rather than a bare `decimal`, matching Apache Spark.
+  override def typeName: String = s"decimal($precision,$scale)"
 }
 
 object DecimalType {
@@ -150,7 +152,13 @@ object DecimalType {
 /** A year-month interval type covering a contiguous range of fields. */
 case class YearMonthIntervalType(startField: Byte, endField: Byte) extends AtomicType {
   override def defaultSize: Int = 4
-  override def simpleString: String = "interval year to month"
+  // Render the actual field range (e.g. `interval month`, `interval year to month`) rather than a
+  // fixed string, matching Apache Spark for non-default field ranges.
+  override def typeName: String = {
+    def fieldName(b: Byte): String = if (b == YearMonthIntervalType.YEAR) "year" else "month"
+    if (startField == endField) s"interval ${fieldName(startField)}"
+    else s"interval ${fieldName(startField)} to ${fieldName(endField)}"
+  }
 }
 
 object YearMonthIntervalType {
@@ -162,7 +170,12 @@ object YearMonthIntervalType {
 /** A day-time interval type covering a contiguous range of fields. */
 case class DayTimeIntervalType(startField: Byte, endField: Byte) extends AtomicType {
   override def defaultSize: Int = 8
-  override def simpleString: String = "interval day to second"
+  // Render the actual field range (e.g. `interval hour to minute`) rather than a fixed string.
+  override def typeName: String = {
+    val names = Array("day", "hour", "minute", "second")
+    if (startField == endField) s"interval ${names(startField)}"
+    else s"interval ${names(startField)} to ${names(endField)}"
+  }
 }
 
 object DayTimeIntervalType {
