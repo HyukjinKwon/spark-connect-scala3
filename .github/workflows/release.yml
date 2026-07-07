@@ -56,13 +56,33 @@ jobs:
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
           PGP_SECRET: ${{ secrets.PGP_SECRET }}
           PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
+          # The Central Portal publish is: upload bundle -> poll status until PUBLISHED.
+          # A single slow status poll used to time out (~5s socket read) and abort the
+          # whole run *after* the bundle had already uploaded, losing the GitHub Release
+          # step. Give the HTTP client generous connect/read timeouts (sun.net props are
+          # honored by the sttp HttpURLConnection backend sbt-sonatype uses) so a slow
+          # status response is tolerated rather than fatal.
+          JAVA_OPTS: >-
+            -Dsun.net.client.defaultConnectTimeout=120000
+            -Dsun.net.client.defaultReadTimeout=600000
 
+      # Creating the GitHub Release is decoupled from the publish step's exit status.
+      # Rationale: once the bundle is uploaded, Central may finish publishing server-side
+      # even if the client-side status poll flakes and the publish step reports failure
+      # (the artifact is immutable, so it cannot be re-published). Running this with
+      # `always()` on a tag ensures the release is still recorded. It is idempotent -- a
+      # re-run that finds the release already present is treated as success.
       - name: Create GitHub Release
-        if: github.ref_type == 'tag'
+        if: ${{ always() && github.ref_type == 'tag' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ github.ref_name }}" \
+          tag="${{ github.ref_name }}"
+          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "GitHub Release $tag already exists; nothing to do."
+            exit 0
+          fi
+          gh release create "$tag" \
             --repo "${{ github.repository }}" \
-            --title "${{ github.ref_name }}" \
+            --title "$tag" \
             --generate-notes
