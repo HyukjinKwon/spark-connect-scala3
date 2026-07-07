@@ -9,19 +9,19 @@
 
 ## Add the dependency
 
-The current release is `0.2.0`. Scala 3 artifacts carry the `_3` suffix, so the
+The current release is `0.3.0`. Scala 3 artifacts carry the `_3` suffix, so the
 fully qualified Maven artifact id is `spark-connect-scala3-client_3`.
 
 sbt (`build.sbt`):
 
 ```scala
-libraryDependencies += "com.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.2.0"
+libraryDependencies += "com.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.3.0"
 ```
 
 sbt with an explicit Scala suffix:
 
 ```scala
-libraryDependencies += "com.github.hyukjinkwon" % "spark-connect-scala3-client_3" % "0.2.0"
+libraryDependencies += "com.github.hyukjinkwon" % "spark-connect-scala3-client_3" % "0.3.0"
 ```
 
 Maven (`pom.xml`):
@@ -30,20 +30,20 @@ Maven (`pom.xml`):
 <dependency>
   <groupId>com.github.hyukjinkwon</groupId>
   <artifactId>spark-connect-scala3-client_3</artifactId>
-  <version>0.2.0</version>
+  <version>0.3.0</version>
 </dependency>
 ```
 
 Gradle (`build.gradle.kts`):
 
 ```kotlin
-implementation("com.github.hyukjinkwon:spark-connect-scala3-client_3:0.2.0")
+implementation("com.github.hyukjinkwon:spark-connect-scala3-client_3:0.3.0")
 ```
 
 Mill (`build.sc`):
 
 ```scala
-ivy"com.github.hyukjinkwon::spark-connect-scala3-client:0.2.0"
+ivy"com.github.hyukjinkwon::spark-connect-scala3-client:0.3.0"
 ```
 
 The published versions are listed on the
@@ -124,7 +124,7 @@ Apache Arrow needs two JDK modules opened on the REPL's JVM (see
 
 ```bash
 scala-cli repl \
-  --dep com.github.hyukjinkwon::spark-connect-scala3-client:0.2.0 \
+  --dep com.github.hyukjinkwon::spark-connect-scala3-client:0.3.0 \
   --java-opt --add-opens=java.base/java.nio=ALL-UNNAMED \
   --java-opt --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
 ```
@@ -136,7 +136,7 @@ JAVA_OPTS="--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.
 ```
 
 ```scala
-import $ivy.`com.github.hyukjinkwon::spark-connect-scala3-client:0.2.0`
+import $ivy.`com.github.hyukjinkwon::spark-connect-scala3-client:0.3.0`
 ```
 
 ### Connect a session and explore
