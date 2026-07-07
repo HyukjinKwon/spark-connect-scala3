@@ -93,7 +93,7 @@ runs `sbt ci-release` when a version tag is pushed.
 
 One-time setup:
 
-1. Register and verify the `io.github.hyukjinkwon` namespace on
+1. Register and verify the `com.github.hyukjinkwon` namespace on
    [central.sonatype.com](https://central.sonatype.com/) and generate a user token
    (Account -> Generate User Token).
 2. Create a PGP key, publish its public half to a keyserver, and export the private

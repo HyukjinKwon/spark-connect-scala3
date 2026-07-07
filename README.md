@@ -1,7 +1,7 @@
 # Spark Connect for Scala 3
 
 [![CI](https://github.com/HyukjinKwon/spark-connect-scala3/actions/workflows/ci.yml/badge.svg)](https://github.com/HyukjinKwon/spark-connect-scala3/actions/workflows/ci.yml)
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.hyukjinkwon/spark-connect-scala3-client_3.svg)](https://central.sonatype.com/artifact/io.github.hyukjinkwon/spark-connect-scala3-client_3)
+[![Maven Central](https://img.shields.io/maven-central/v/com.github.hyukjinkwon/spark-connect-scala3-client_3.svg)](https://central.sonatype.com/artifact/com.github.hyukjinkwon/spark-connect-scala3-client_3)
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://hyukjinkwon.github.io/spark-connect-scala3/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
 
@@ -45,14 +45,14 @@ The current release is `0.3.0`, published for **Scala 3.3.x** (the Scala 3 LTS l
 sbt (`build.sbt`):
 
 ```scala
-libraryDependencies += "io.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.3.0"
+libraryDependencies += "com.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.3.0"
 ```
 
 Maven (`pom.xml`) - Scala 3 artifacts use the `_3` suffix:
 
 ```xml
 <dependency>
-  <groupId>io.github.hyukjinkwon</groupId>
+  <groupId>com.github.hyukjinkwon</groupId>
   <artifactId>spark-connect-scala3-client_3</artifactId>
   <version>0.3.0</version>
 </dependency>
@@ -61,7 +61,7 @@ Maven (`pom.xml`) - Scala 3 artifacts use the `_3` suffix:
 Gradle (`build.gradle.kts`):
 
 ```kotlin
-implementation("io.github.hyukjinkwon:spark-connect-scala3-client_3:0.3.0")
+implementation("com.github.hyukjinkwon:spark-connect-scala3-client_3:0.3.0")
 ```
 
 See the [Installation guide](https://hyukjinkwon.github.io/spark-connect-scala3/installation/) for Mill, the JVM flags Apache Arrow needs on JDK 17+, and how to start a Spark Connect server.
@@ -96,7 +96,7 @@ Use any Scala REPL with the client as a dependency. With
 
 ```bash
 scala-cli repl \
-  --dep io.github.hyukjinkwon::spark-connect-scala3-client:0.3.0 \
+  --dep com.github.hyukjinkwon::spark-connect-scala3-client:0.3.0 \
   --java-opt --add-opens=java.base/java.nio=ALL-UNNAMED \
   --java-opt --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
 ```

@@ -23,7 +23,7 @@ ThisBuild / scalaVersion := "3.3.6"
 lazy val app = (project in file("."))
   .settings(
     name := "spark-connect-scala3-standalone-example",
-    libraryDependencies += "io.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.3.0",
+    libraryDependencies += "com.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.3.0",
     // Apache Arrow accesses internal NIO buffers; open the modules on the application
     // JVM (required on JDK 17 and newer), and fork so these options take effect.
     run / fork := true,
