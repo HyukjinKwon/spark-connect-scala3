@@ -123,6 +123,38 @@ It also includes typed Datasets: `df.as[T]` and `spark.createDataset(values)` fo
 case classes, tuples, primitives, `Option`, collections, and maps. The encoders run
 entirely on the client, so no closure is sent to the server.
 
+### Plugin extensions
+
+Spark Connect plugins (server-side `RelationPlugin`, `ExpressionPlugin`, or
+`CommandPlugin` implementations, e.g. GraphFrames) ship arbitrary protobuf messages
+in the `extension` field of a relation. You can build such a relation and turn it
+into a `DataFrame`, mirroring the PySpark client's
+`plan.extension.Pack(msg)` / `DataFrame(plan, session)`:
+
+```scala
+import com.google.protobuf.any.{Any => ProtoAny}
+import org.apache.spark.sql.SparkSession
+
+// `MyPluginMessage` is a ScalaPB message generated from your plugin's own .proto.
+// Existing DataFrames can be embedded by referencing their `.relation` (the protobuf
+// logical plan), the counterpart of PySpark's `dataframe_to_proto(df, session)`.
+val payload = MyPluginMessage(input = Some(existingDf.relation))
+val df: DataFrame = spark.newDataFrame(ProtoAny.pack(payload))
+df.show()
+```
+
+The relevant entry points are public: `SparkSession.newDataFrame` (both a
+`google.protobuf.Any` overload and a raw `Relation.RelType` overload),
+`SparkSession.newRelation`, and `Dataset.relation` / `Dataset.plan` for extracting
+the built plan. See
+[`RelationExtension`](modules/examples/src/main/scala/examples/RelationExtension.scala)
+for a runnable example.
+
+Executing the resulting DataFrame requires the matching server-side plugin to be
+registered (e.g. via `spark.connect.extensions.relation.classes`); the server routes
+every `extension` relation to a `RelationPlugin` and does not interpret the packed
+message itself. The client is responsible only for building and sending the plan.
+
 ### Not supported
 
 The following all require running a user-provided JVM closure on the server (the

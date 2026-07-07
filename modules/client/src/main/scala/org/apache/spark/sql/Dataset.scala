@@ -33,11 +33,24 @@ import org.apache.spark.sql.types.StructType
  */
 class Dataset[T] private[sql] (
     val sparkSession: SparkSession,
-    private[sql] val relation: proto.Relation,
+    /**
+     * The protobuf logical plan (a [[proto.Relation]]) backing this Dataset.
+     *
+     * Exposed for Spark Connect plugin authors who need to embed an existing Dataset inside a
+     * custom relation -- for example, referencing `df.relation` as an input to a plugin message
+     * before packing it via
+     * [[SparkSession.newDataFrame(extension:com\.google\.protobuf\.any\.Any)*]].
+     */
+    val relation: proto.Relation,
     private[sql] val encoder: Encoder[T]
 ) {
 
-  private[sql] def plan: proto.Plan = proto.Plan(proto.Plan.OpType.Root(relation))
+  /**
+   * The full protobuf [[proto.Plan]] (a root plan wrapping [[relation]]) that would be sent to the
+   * server to execute this Dataset. Exposed for plugin authors and tooling; ordinary code never
+   * needs it.
+   */
+  def plan: proto.Plan = proto.Plan(proto.Plan.OpType.Root(relation))
 
   /** Builds a new DataFrame whose relation has `this` as input. */
   private def withInput(relType: RelType): DataFrame = sparkSession.newDataFrame(relType)

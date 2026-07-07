@@ -25,6 +25,7 @@ sbt "examples/runMain examples.JoinExample sc://localhost:15002"
 | `ReadWrite` | Round-trip a DataFrame through Parquet on the server's filesystem. |
 | `StructuredStreaming` | Read the built-in `rate` source, transform it, write to the in-memory sink, and query the sink. |
 | `DeclarativePipeline` | Build and run a Spark Declarative Pipelines dataflow graph (requires an Apache Spark 4.1+ server). |
+| `RelationExtension` | Build a `Relation.extension` from a packed protobuf message and turn it into a DataFrame -- the entry point for Spark Connect plugins (e.g. GraphFrames). |
 | `Smoke` | A minimal end-to-end check against a live Spark Connect server. |
 
 Run any of them by name, for example:
