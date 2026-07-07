@@ -66,14 +66,50 @@ class SparkSession private[sql] (private[sql] val client: SparkConnectClient)
 
   private[sql] def nextPlanId(): Long = planIdGenerator.getAndIncrement()
 
-  private[sql] def newRelation(relType: proto.Relation.RelType): proto.Relation =
+  /**
+   * Wraps a `RelType` into a fresh [[proto.Relation]] tagged with a unique plan id.
+   *
+   * This is a low-level building block intended for Spark Connect plugin authors who need to
+   * construct custom relations (for example, a relation handled by a server-side
+   * `org.apache.spark.sql.connect.plugin.RelationPlugin`). It is a stable extension point but not
+   * part of the day-to-day DataFrame API; ordinary code should use [[range]], [[sql]],
+   * [[createDataFrame]], and friends instead.
+   */
+  def newRelation(relType: proto.Relation.RelType): proto.Relation =
     proto.Relation(
       common = Some(proto.RelationCommon(planId = Some(nextPlanId()))),
       relType = relType
     )
 
-  private[sql] def newDataFrame(relType: proto.Relation.RelType): DataFrame =
+  /**
+   * Creates a [[DataFrame]] from an arbitrary `RelType`, tagging it with a unique plan id.
+   *
+   * This is the primary extension point for Spark Connect plugins: build any relation the server
+   * understands -- including a custom `extension` relation -- and turn it into a [[DataFrame]]. For
+   * the common case of a packed plugin message, prefer the
+   * [[newDataFrame(extension:com\.google\.protobuf\.any\.Any)* extension overload]].
+   */
+  def newDataFrame(relType: proto.Relation.RelType): DataFrame =
     new Dataset(this, newRelation(relType), Encoder.rowEncoder)
+
+  /**
+   * Creates a [[DataFrame]] backed by an `extension` relation carrying an already packed protobuf
+   * message. This is the Scala counterpart of the PySpark client's
+   * {{{plan.extension.Pack(message); DataFrame(plan, session)}}} and targets server-side
+   * `org.apache.spark.sql.connect.plugin.RelationPlugin` implementations.
+   *
+   * {{{
+   *   import com.google.protobuf.any.Any as ProtoAny
+   *
+   *   // `myPluginMessage` is a ScalaPB message generated from the plugin's own .proto.
+   *   // Existing DataFrames can be embedded via their `relation` (see Dataset.relation):
+   *   //   val payload = MyPlugin(input = Some(existingDf.relation))
+   *   val payload: ProtoAny = ProtoAny.pack(myPluginMessage)
+   *   val df = spark.newDataFrame(payload)
+   * }}}
+   */
+  def newDataFrame(extension: com.google.protobuf.any.Any): DataFrame =
+    newDataFrame(proto.Relation.RelType.Extension(extension))
 
   private[sql] def execute(plan: proto.Plan): SparkResult =
     new SparkResult(client.execute(plan), allocator)

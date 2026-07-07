@@ -3,6 +3,17 @@
 All notable changes to this project are documented in this file. The format is
 based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- Public entry points for Spark Connect plugin authors (e.g. GraphFrames) to build
+  `Relation.extension` plans and turn them into `DataFrame`s, mirroring the PySpark
+  client's `plan.extension.Pack(msg)` / `DataFrame(plan, session)`:
+  `SparkSession.newDataFrame` (a `google.protobuf.Any` overload and a raw
+  `Relation.RelType` overload), `SparkSession.newRelation`, and `Dataset.relation` /
+  `Dataset.plan` for extracting the built plan. See the `RelationExtension` example.
+
 ## [0.2.0] - 2026-06-15
 
 ### Fixed
