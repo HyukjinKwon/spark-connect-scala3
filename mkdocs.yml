@@ -46,6 +46,7 @@ nav:
   - Catalog: catalog.md
   - Structured Streaming: streaming.md
   - Declarative Pipelines: pipelines.md
+  - Plugin extensions: plugin-extensions.md
   - Configuration and Connection: configuration.md
   - Examples: examples.md
   - API coverage: api-coverage.md

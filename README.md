@@ -125,35 +125,11 @@ entirely on the client, so no closure is sent to the server.
 
 ### Plugin extensions
 
-Spark Connect plugins (server-side `RelationPlugin`, `ExpressionPlugin`, or
-`CommandPlugin` implementations, e.g. GraphFrames) ship arbitrary protobuf messages
-in the `extension` field of a relation. You can build such a relation and turn it
-into a `DataFrame`, mirroring the PySpark client's
-`plan.extension.Pack(msg)` / `DataFrame(plan, session)`:
-
-```scala
-import com.google.protobuf.any.{Any => ProtoAny}
-import org.apache.spark.sql.SparkSession
-
-// `MyPluginMessage` is a ScalaPB message generated from your plugin's own .proto.
-// Existing DataFrames can be embedded by referencing their `.relation` (the protobuf
-// logical plan), the counterpart of PySpark's `dataframe_to_proto(df, session)`.
-val payload = MyPluginMessage(input = Some(existingDf.relation))
-val df: DataFrame = spark.newDataFrame(ProtoAny.pack(payload))
-df.show()
-```
-
-The relevant entry points are public: `SparkSession.newDataFrame` (both a
-`google.protobuf.Any` overload and a raw `Relation.RelType` overload),
-`SparkSession.newRelation`, and `Dataset.relation` / `Dataset.plan` for extracting
-the built plan. See
-[`RelationExtension`](modules/examples/src/main/scala/examples/RelationExtension.scala)
-for a runnable example.
-
-Executing the resulting DataFrame requires the matching server-side plugin to be
-registered (e.g. via `spark.connect.extensions.relation.classes`); the server routes
-every `extension` relation to a `RelationPlugin` and does not interpret the packed
-message itself. The client is responsible only for building and sending the plan.
+Spark Connect plugins (server-side `RelationPlugin` and friends, e.g. GraphFrames)
+are supported: you can build a `Relation.extension` from a packed protobuf message
+and turn it into a `DataFrame`, mirroring the PySpark client's
+`plan.extension.Pack(msg)` / `DataFrame(plan, session)`. See the
+[Plugin extensions guide](https://hyukjinkwon.github.io/spark-connect-scala3/plugin-extensions/).
 
 ### Not supported
 

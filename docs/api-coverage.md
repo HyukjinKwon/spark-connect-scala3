@@ -19,6 +19,7 @@ are no surprises.
 | Catalog | `spark.catalog`: list/inspect catalogs, databases, tables, columns, functions; existence checks; `createTable`/`createExternalTable`; temp-view drops; cache management |
 | Structured Streaming | `DataStreamReader`/`DataStreamWriter`, output modes, triggers (`ProcessingTime`/`Once`/`AvailableNow`/`Continuous`), `start`/`toTable`, `StreamingQuery`, `StreamingQueryManager`, and `StreamingQueryListener` registration (`addListener`/`removeListener`/`listListeners`) with client-side event dispatch |
 | Declarative Pipelines | build graphs of tables, materialized views, temporary views, sinks, and flows, then run them on the server |
+| Plugin extensions | build a `Relation.extension` from a packed protobuf message (`SparkSession.newDataFrame`/`newRelation`, `Dataset.relation`/`plan`) for server-side `RelationPlugin`s such as GraphFrames |
 | Typed Datasets | `as[T]` and `spark.createDataset` with compile-time `Encoder` derivation for case classes, tuples, primitives, `Option`, collections, and maps; typed actions (`collect`/`head`/`first`/`take`/`collectAsList`/`toLocalIterator`) |
 | Observation | `Observation` for collecting named aggregate metrics while a query runs |
 | Config | `RuntimeConfig` (`spark.conf.get`/`set`/`unset`/`isModifiable`) |
