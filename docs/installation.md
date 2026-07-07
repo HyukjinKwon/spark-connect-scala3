@@ -15,20 +15,20 @@ fully qualified Maven artifact id is `spark-connect-scala3-client_3`.
 sbt (`build.sbt`):
 
 ```scala
-libraryDependencies += "com.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.3.0"
+libraryDependencies += "io.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.3.0"
 ```
 
 sbt with an explicit Scala suffix:
 
 ```scala
-libraryDependencies += "com.github.hyukjinkwon" % "spark-connect-scala3-client_3" % "0.3.0"
+libraryDependencies += "io.github.hyukjinkwon" % "spark-connect-scala3-client_3" % "0.3.0"
 ```
 
 Maven (`pom.xml`):
 
 ```xml
 <dependency>
-  <groupId>com.github.hyukjinkwon</groupId>
+  <groupId>io.github.hyukjinkwon</groupId>
   <artifactId>spark-connect-scala3-client_3</artifactId>
   <version>0.3.0</version>
 </dependency>
@@ -37,17 +37,17 @@ Maven (`pom.xml`):
 Gradle (`build.gradle.kts`):
 
 ```kotlin
-implementation("com.github.hyukjinkwon:spark-connect-scala3-client_3:0.3.0")
+implementation("io.github.hyukjinkwon:spark-connect-scala3-client_3:0.3.0")
 ```
 
 Mill (`build.sc`):
 
 ```scala
-ivy"com.github.hyukjinkwon::spark-connect-scala3-client:0.3.0"
+ivy"io.github.hyukjinkwon::spark-connect-scala3-client:0.3.0"
 ```
 
 The published versions are listed on the
-[Maven Central page](https://central.sonatype.com/artifact/com.github.hyukjinkwon/spark-connect-scala3-client_3).
+[Maven Central page](https://central.sonatype.com/artifact/io.github.hyukjinkwon/spark-connect-scala3-client_3).
 
 ## JVM flags for Apache Arrow
 
@@ -124,7 +124,7 @@ Apache Arrow needs two JDK modules opened on the REPL's JVM (see
 
 ```bash
 scala-cli repl \
-  --dep com.github.hyukjinkwon::spark-connect-scala3-client:0.3.0 \
+  --dep io.github.hyukjinkwon::spark-connect-scala3-client:0.3.0 \
   --java-opt --add-opens=java.base/java.nio=ALL-UNNAMED \
   --java-opt --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
 ```
@@ -136,7 +136,7 @@ JAVA_OPTS="--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.
 ```
 
 ```scala
-import $ivy.`com.github.hyukjinkwon::spark-connect-scala3-client:0.3.0`
+import $ivy.`io.github.hyukjinkwon::spark-connect-scala3-client:0.3.0`
 ```
 
 ### Connect a session and explore

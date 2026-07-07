@@ -5,6 +5,12 @@ based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
 ## [0.3.0] - 2026-07-07
 
+### Changed
+
+- Maven coordinates moved from `com.github.hyukjinkwon` to `io.github.hyukjinkwon`
+  (the namespace the Sonatype Central Portal verifies for GitHub-hosted projects).
+  Update your dependency's groupId accordingly.
+
 ### Added
 
 - Public entry points for Spark Connect plugin authors (e.g. GraphFrames) to build

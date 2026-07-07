@@ -62,7 +62,7 @@ Also out of scope because they are not part of the Spark Connect protocol at all
 
 ## Project facts
 
-- **Maven coordinates**: `com.github.hyukjinkwon` :: `spark-connect-scala3-client`, built for Scala 3.3.x.
+- **Maven coordinates**: `io.github.hyukjinkwon` :: `spark-connect-scala3-client`, built for Scala 3.3.x.
 - **Spark compatibility**: built and tested against Apache Spark 4.0.x and 4.1.x (latest 4.1.2). The protobufs are sourced from Spark 4.1.2.
 - **Source**: [HyukjinKwon/spark-connect-scala3](https://github.com/HyukjinKwon/spark-connect-scala3).
 

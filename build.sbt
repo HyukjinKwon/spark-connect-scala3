@@ -16,7 +16,7 @@
  */
 // Spark Connect client for Scala 3: multi-module build.
 
-ThisBuild / organization := "com.github.hyukjinkwon"
+ThisBuild / organization := "io.github.hyukjinkwon"
 ThisBuild / organizationName := "Hyukjin Kwon"
 ThisBuild / scalaVersion := "3.3.6"
 // Version is derived from git tags by sbt-dynver (via sbt-ci-release): a tag like

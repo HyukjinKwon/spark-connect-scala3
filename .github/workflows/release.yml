@@ -14,7 +14,7 @@ name: Release
 #   PGP_SECRET        - base64-encoded ASCII-armored PGP private key (e.g. `gpg --armor --export-secret-keys KEY | base64`)
 #   PGP_PASSPHRASE    - passphrase for that PGP key
 #
-# One-time setup: register/verify the `com.github.hyukjinkwon` namespace on the
+# One-time setup: register/verify the `io.github.hyukjinkwon` namespace on the
 # Central Portal and publish the public half of the PGP key to a keyserver.
 
 on:
