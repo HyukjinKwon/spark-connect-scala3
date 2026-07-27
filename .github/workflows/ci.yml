@@ -55,7 +55,7 @@ jobs:
         # Pinned to the latest patch of each line, which the Apache CDN (dlcdn)
         # actively hosts. Older patches live only on the throttled archive mirror
         # and time out the 390 MB download in CI, so we always track the current
-        # patch: 3.5.x, 4.0.x, 4.1.x.
+        # patch: 3.5.x, 4.0.x, 4.1.x, 4.2.x.
         include:
           # Spark 3.5.x does not bundle the Connect server: use the Scala 2.13
           # distribution and pull the server in with --packages.
@@ -68,6 +68,9 @@ jobs:
             packages: ""
           - spark: "4.1.2"
             tarball: "spark-4.1.2-bin-hadoop3.tgz"
+            packages: ""
+          - spark: "4.2.0"
+            tarball: "spark-4.2.0-bin-hadoop3.tgz"
             packages: ""
     steps:
       - uses: actions/checkout@v4
