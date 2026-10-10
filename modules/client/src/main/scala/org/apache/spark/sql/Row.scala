@@ -85,9 +85,9 @@ trait Row extends Serializable {
   /** Returns the row as a Scala Seq. */
   def toSeq: Seq[Any] = (0 until length).map(get)
 
-  /** Returns a Map from field name to value (requires a schema). */
-  def getValuesMap[T](fieldNames: Seq[String]): Map[T, Any] =
-    fieldNames.map(n => n -> getAs[T](n).asInstanceOf[Any]).toMap.asInstanceOf[Map[T, Any]]
+  /** Returns a Map from field names to values cast to `T` (requires a schema). */
+  def getValuesMap[T](fieldNames: Seq[String]): Map[String, T] =
+    fieldNames.map(name => name -> getAs[T](name)).toMap
 
   /** Displayable string, e.g. `[1,abc,2.0]`. */
   def mkString: String = mkString("")
