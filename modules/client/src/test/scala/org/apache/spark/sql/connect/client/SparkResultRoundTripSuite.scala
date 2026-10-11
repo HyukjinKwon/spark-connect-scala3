@@ -23,7 +23,7 @@ import com.google.protobuf.ByteString
 import org.apache.arrow.memory.RootAllocator
 
 import org.apache.spark.connect.proto
-import org.apache.spark.sql.{Encoder, Row}
+import org.apache.spark.sql.{Column, Encoder, Row}
 import org.apache.spark.sql.connect.common.DataTypeProtoConverter
 import org.apache.spark.sql.types.*
 
@@ -166,6 +166,44 @@ class SparkResultRoundTripSuite extends munit.FunSuite {
     val input = Seq(java.sql.Timestamp.from(Instant.parse("1969-12-31T23:59:59.999999Z")), null)
     val result = roundTrip(encoder.schema, input.map(value => encoder.toRow(value).toSeq))
     assertEquals(result.toArray.map(encoder.fromRow).toSeq, input)
+
+  Seq("UTC", "America/Los_Angeles").foreach: zone =>
+    test(s"decodes historical SQL timestamp fields from independent Arrow instants in $zone"):
+      val originalZone = TimeZone.getDefault
+      try
+        TimeZone.setDefault(TimeZone.getTimeZone(zone))
+        val local = Seq("0001-01-01T00:00:00", "1000-01-01T00:00:00.123456", "1800-01-01T00:00:00")
+          .map(LocalDateTime.parse)
+        val instants = local.map(_.atZone(java.time.ZoneId.of(zone)).toInstant)
+        val wireEncoder = Encoder[Instant]
+        val result = roundTrip(wireEncoder.schema, instants.map(i => wireEncoder.toRow(i).toSeq))
+        val decoded = result.toArray.map(Encoder[java.sql.Timestamp].fromRow).toSeq
+        assertEquals(decoded.map(_.toLocalDateTime), local)
+      finally TimeZone.setDefault(originalZone)
+
+    test(s"encodes historical SQL timestamps to Spark Arrow and literal instants in $zone"):
+      val originalZone = TimeZone.getDefault
+      try
+        TimeZone.setDefault(TimeZone.getTimeZone(zone))
+        val local = Seq("0001-01-01T00:00:00", "1000-01-01T00:00:00.123456", "1800-01-01T00:00:00")
+          .map(LocalDateTime.parse)
+        val expected = local.map(_.atZone(java.time.ZoneId.of(zone)).toInstant)
+        val input = local.map(java.sql.Timestamp.valueOf)
+        val encoder = Encoder[java.sql.Timestamp]
+        val result = roundTrip(encoder.schema, input.map(t => encoder.toRow(t).toSeq))
+        assertEquals(result.toArray.map(_.getInstant(0)).toSeq, expected)
+        input
+          .zip(expected)
+          .foreach: (timestamp, instant) =>
+            val micros = Math.addExact(
+              Math.multiplyExact(instant.getEpochSecond, 1000000L),
+              instant.getNano / 1000L
+            )
+            assertEquals(
+              Column.toLiteralProto(timestamp).literalType,
+              proto.Expression.Literal.LiteralType.Timestamp(micros)
+            )
+      finally TimeZone.setDefault(originalZone)
 
   test("java.sql.Date encoder still accepts an existing SQL date"):
     val encoder = Encoder[java.sql.Date]

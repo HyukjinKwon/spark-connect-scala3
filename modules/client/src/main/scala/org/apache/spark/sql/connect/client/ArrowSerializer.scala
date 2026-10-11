@@ -382,7 +382,8 @@ object ArrowSerializer {
   /** Converts a timestamp-ish value to epoch microseconds (mirrors [[SparkResult]] decode). */
   private def toEpochMicros(value: Any): Long = value match {
     case i: Instant => instantToMicros(i)
-    case t: java.sql.Timestamp => instantToMicros(t.toInstant)
+    case t: java.sql.Timestamp =>
+      instantToMicros(org.apache.spark.sql.SqlTimestampConversion.toInstant(t))
     case ldt: LocalDateTime => instantToMicros(ldt.toInstant(ZoneOffset.UTC))
     case n: Number => n.longValue()
     case other => throw coerceError(other, "Timestamp")

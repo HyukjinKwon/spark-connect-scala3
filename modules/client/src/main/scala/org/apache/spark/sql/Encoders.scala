@@ -139,7 +139,7 @@ object Encoder {
       TimestampType,
       value =>
         value match
-          case instant: java.time.Instant => java.sql.Timestamp.from(instant)
+          case instant: java.time.Instant => SqlTimestampConversion.toJavaTimestamp(instant)
           case other => other.asInstanceOf[java.sql.Timestamp],
       isNullable = true
     )
