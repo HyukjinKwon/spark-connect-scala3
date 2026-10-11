@@ -48,6 +48,32 @@ class IntegrationSuite extends munit.FunSuite {
   override def afterAll(): Unit =
     if (spark != null) spark.stop()
 
+  Seq("UTC", "America/Los_Angeles").foreach: zone =>
+    test(s"historical SQL dates and timestamps preserve calendar fields in $zone"):
+      val originalZone = java.util.TimeZone.getDefault
+      val session = spark.newSession()
+      try
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(zone))
+        session.conf.set("spark.sql.session.timeZone", zone)
+        Seq("0001-01-01", "1000-01-01", "1800-01-01", "1969-12-31").foreach: date =>
+          val expectedDate = java.sql.Date.valueOf(date)
+          val dates = session.sql(s"SELECT DATE '$date'").as[java.sql.Date].collect()
+          assertEquals(dates.toSeq, Seq(expectedDate))
+          assertEquals(dates.head.toLocalDate, expectedDate.toLocalDate)
+          val text = s"$date 12:34:56.123456"
+          val expectedTimestamp = java.sql.Timestamp.valueOf(text)
+          val timestamps = session.sql(s"SELECT TIMESTAMP '$text'").as[java.sql.Timestamp].collect()
+          assertEquals(timestamps.toSeq, Seq(expectedTimestamp))
+          assertEquals(timestamps.head.toLocalDateTime, expectedTimestamp.toLocalDateTime)
+          val literal =
+            session.range(1).select(lit(expectedTimestamp)).as[java.sql.Timestamp].collect()
+          assertEquals(literal.toSeq, Seq(expectedTimestamp))
+          val encoded = session.createDataset(Seq(expectedTimestamp)).collect()
+          assertEquals(encoded.toSeq, Seq(expectedTimestamp))
+      finally
+        try session.close()
+        finally java.util.TimeZone.setDefault(originalZone)
+
   test("parent session can run queries after closing its new session"):
     val parent = spark.newSession()
     try
