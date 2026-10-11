@@ -48,6 +48,24 @@ class IntegrationSuite extends munit.FunSuite {
   override def afterAll(): Unit =
     if (spark != null) spark.stop()
 
+  test("parent session can run queries after closing its new session"):
+    val parent = spark.newSession()
+    try
+      val child = parent.newSession()
+      try assertEquals(child.range(3).count(), 3L)
+      finally child.close()
+      assertEquals(parent.range(5).count(), 5L)
+    finally parent.close()
+
+  test("new session can run queries after closing its parent"):
+    val parent = spark.newSession()
+    val child = parent.newSession()
+    try
+      try assertEquals(parent.range(3).count(), 3L)
+      finally parent.close()
+      assertEquals(child.range(5).count(), 5L)
+    finally child.close()
+
   test("range + filter + collect") {
     val rows = spark.range(10).filter(col("id") % 2 === 0).collect()
     assertEquals(rows.length, 5)
