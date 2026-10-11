@@ -239,6 +239,22 @@ class SparkResultRoundTripSuite extends munit.FunSuite {
     assertEquals(nested.getInt(1), 30)
   }
 
+  test("round-trips a derived nested product through Arrow"):
+    case class Detail(name: String, count: Int) derives Encoder
+    case class Record(id: Long, detail: Detail) derives Encoder
+    val encoder = Encoder[Record]
+    val input = Record(1L, Detail("item", 2))
+    val result = roundTrip(encoder.schema, Seq(encoder.toRow(input).toSeq))
+    assertEquals(encoder.fromRow(result.toArray.head), input)
+
+  test("round-trips an optional nested product through Arrow"):
+    case class Detail(name: String, count: Int) derives Encoder
+    case class Record(detail: Option[Detail]) derives Encoder
+    val encoder = Encoder[Record]
+    val input = Seq(Record(Some(Detail("item", 2))), Record(None))
+    val result = roundTrip(encoder.schema, input.map(value => encoder.toRow(value).toSeq))
+    assertEquals(result.toArray.map(encoder.fromRow).toSeq, input)
+
   test("round-trips a map column") {
     val schema = StructType(Array(StructField("counts", MapType(StringType, IntegerType))))
     val result = roundTrip(schema, Seq(Seq(Map("a" -> 1, "b" -> 2))))

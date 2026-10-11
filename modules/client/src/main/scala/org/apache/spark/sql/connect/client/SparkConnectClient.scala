@@ -274,9 +274,9 @@ class SparkConnectClient private[sql] (
     response.interruptedIds
   }
 
-  /** Returns a new client that shares the channel but starts a fresh session id. */
+  /** Returns a new client with its own channel and a fresh session id. */
   private[sql] def copy(): SparkConnectClient =
-    new SparkConnectClient(configuration.copy(sessionId = None), channel)
+    configuration.copy(sessionId = None).toSparkConnectClient
 
   def shutdown(): Unit = {
     // Try a graceful shutdown first so in-flight RPCs can finish and the server can release

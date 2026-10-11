@@ -31,6 +31,7 @@ import org.apache.arrow.vector.ipc.ArrowStreamWriter
 import org.apache.arrow.vector.types.{DateUnit, FloatingPointPrecision, TimeUnit}
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType, Schema}
 
+import org.apache.spark.sql.Row
 import org.apache.spark.sql.types._
 
 /**
@@ -266,7 +267,9 @@ object ArrowSerializer {
       structType: StructType
   ): Unit = {
     vector.setIndexDefined(index)
-    val values = toSeq(value)
+    val values = value match
+      case row: Row => row.toSeq
+      case other => toSeq(other)
     val children = vector.getChildrenFromFields
     var c = 0
     while (c < structType.fields.length && c < children.size()) {

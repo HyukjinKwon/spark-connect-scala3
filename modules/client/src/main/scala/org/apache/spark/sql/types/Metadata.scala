@@ -49,7 +49,7 @@ final class Metadata private[types] (private[types] val map: Map[String, Any])
   def json: String =
     map.toSeq
       .sortBy(_._1)
-      .map { case (k, v) => s"\"$k\":${Metadata.toJson(v)}" }
+      .map { case (k, v) => s"${Metadata.quoteJsonString(k)}:${Metadata.toJson(v)}" }
       .mkString("{", ",", "}")
 
   override def toString: String = json
@@ -59,8 +59,22 @@ object Metadata {
   private val _empty = new Metadata(Map.empty)
   def empty: Metadata = _empty
 
+  private def quoteJsonString(value: String): String =
+    value
+      .flatMap:
+        case '"' => "\\\""
+        case '\\' => "\\\\"
+        case '\b' => "\\b"
+        case '\f' => "\\f"
+        case '\n' => "\\n"
+        case '\r' => "\\r"
+        case '\t' => "\\t"
+        case c if c < ' ' => f"\\u${c.toInt}%04x"
+        case c => c.toString
+      .mkString("\"", "", "\"")
+
   private def toJson(value: Any): String = value match {
-    case s: String => "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+    case s: String => quoteJsonString(s)
     case b: Boolean => b.toString
     case m: Metadata => m.json
     case other => other.toString

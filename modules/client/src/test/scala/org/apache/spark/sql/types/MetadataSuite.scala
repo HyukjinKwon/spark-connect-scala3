@@ -70,6 +70,35 @@ class MetadataSuite extends munit.FunSuite {
     assertEquals(m.json, """{"flag":false,"name":"a\"b\\c"}""")
   }
 
+  test("json escapes quotes and backslashes in keys"):
+    val metadata = new MetadataBuilder().putString("a\"b\\c", "value").build()
+    assertEquals(metadata.json, """{"a\"b\\c":"value"}""")
+
+  test("json escapes control characters in string values"):
+    val metadata = new MetadataBuilder().putString("value", "\b\f\n\r\t").build()
+    assertEquals(metadata.json, """{"value":"\b\f\n\r\t"}""")
+
+  test("json escapes control characters in keys"):
+    val metadata = new MetadataBuilder().putString("\b\f\n\r\t", "value").build()
+    assertEquals(metadata.json, """{"\b\f\n\r\t":"value"}""")
+
+  test("json uses Unicode escapes for other control characters"):
+    val metadata = new MetadataBuilder().putString("value", "\u0000\u0001\u001f").build()
+    assertEquals(metadata.json, """{"value":"\u0000\u0001\u001f"}""")
+
+  test("json preserves empty keys and string values"):
+    val metadata = new MetadataBuilder().putString("", "").build()
+    assertEquals(metadata.json, """{"":""}""")
+
+  test("json preserves ordinary Unicode text"):
+    val metadata = new MetadataBuilder().putString("\u00a7", "\u00b1 \u221e /").build()
+    assertEquals(metadata.json, """{"§":"± ∞ /"}""")
+
+  test("json escapes strings in nested metadata"):
+    val nested = new MetadataBuilder().putString("a\"b", "line\nbreak").build()
+    val metadata = new MetadataBuilder().putMetadata("nested", nested).build()
+    assertEquals(metadata.json, """{"nested":{"a\"b":"line\nbreak"}}""")
+
   test("equals and hashCode are by content") {
     val a = new MetadataBuilder().putString("k", "v").build()
     val b = new MetadataBuilder().putString("k", "v").build()
