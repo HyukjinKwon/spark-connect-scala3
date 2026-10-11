@@ -17,6 +17,7 @@
 package org.apache.spark.sql.connect.client
 
 import java.time.{Instant, LocalDate, LocalDateTime}
+import java.util.TimeZone
 
 import com.google.protobuf.ByteString
 import org.apache.arrow.memory.RootAllocator
@@ -145,11 +146,20 @@ class SparkResultRoundTripSuite extends munit.FunSuite {
     assertEquals(r.getAs[LocalDateTime](2), ldt)
   }
 
-  test("round-trips nullable java.sql.Date values through Arrow"):
-    val encoder = Encoder[java.sql.Date]
-    val input = Seq(java.sql.Date.valueOf("1969-12-31"), null)
-    val result = roundTrip(encoder.schema, input.map(value => encoder.toRow(value).toSeq))
-    assertEquals(result.toArray.map(encoder.fromRow).toSeq, input)
+  Seq("UTC", "America/Los_Angeles").foreach: zone =>
+    test(s"round-trips nullable java.sql.Date calendar dates through Arrow in $zone"):
+      val originalZone = TimeZone.getDefault
+      try
+        TimeZone.setDefault(TimeZone.getTimeZone(zone))
+        val encoder = Encoder[java.sql.Date]
+        val dates = Seq("1969-12-31", "1000-01-01", "0001-01-01").map(LocalDate.parse)
+        val input = dates.map(java.sql.Date.valueOf) :+ null
+        val result = roundTrip(encoder.schema, input.map(value => encoder.toRow(value).toSeq))
+        val decoded = result.toArray.map(encoder.fromRow).toSeq
+        assertEquals(decoded, input)
+        assertEquals(decoded.dropRight(1).map(_.toLocalDate), dates)
+        assertEquals(decoded.last, null)
+      finally TimeZone.setDefault(originalZone)
 
   test("round-trips nullable java.sql.Timestamp values through Arrow with microsecond precision"):
     val encoder = Encoder[java.sql.Timestamp]
