@@ -34,7 +34,8 @@ private[sql] object SqlTimestampConversion:
     if !instant.isBefore(lastRebaseInstant) then Timestamp.from(instant)
     else
       val zone = TimeZone.getDefault
-      val zoned = instant.atZone(zone.toZoneId)
+      val zoneId = zone.toZoneId
+      val zoned = instant.atZone(zoneId)
       val local = zoned.toLocalDateTime
       // Spark maps dates in the Gregorian cutover gap to October 15.
       val fields =
@@ -47,13 +48,14 @@ private[sql] object SqlTimestampConversion:
         .setTimeOfDay(fields.getHour, fields.getMinute, fields.getSecond)
         .setTimeZone(zone)
         .build()
-      val transition = zone.toZoneId.getRules.getTransition(fields)
-      if transition != null && transition.isOverlap then
-        val adjacent = calendar.clone().asInstanceOf[Calendar]
-        val shift = if transition.getOffsetBefore == zoned.getOffset then -1 else 1
-        adjacent.add(Calendar.DAY_OF_MONTH, shift)
-        calendar.set(Calendar.ZONE_OFFSET, adjacent.get(Calendar.ZONE_OFFSET))
-        calendar.set(Calendar.DST_OFFSET, adjacent.get(Calendar.DST_OFFSET))
+      Option(zoneId.getRules.getTransition(fields))
+        .filter(_.isOverlap)
+        .foreach: transition =>
+          val adjacent = calendar.clone().asInstanceOf[Calendar]
+          val shift = if transition.getOffsetBefore == zoned.getOffset then -1 else 1
+          adjacent.add(Calendar.DAY_OF_MONTH, shift)
+          calendar.set(Calendar.ZONE_OFFSET, adjacent.get(Calendar.ZONE_OFFSET))
+          calendar.set(Calendar.DST_OFFSET, adjacent.get(Calendar.DST_OFFSET))
       val result = new Timestamp(calendar.getTimeInMillis)
       result.setNanos((fields.getNano / 1000) * 1000)
       result
@@ -82,16 +84,17 @@ private[sql] object SqlTimestampConversion:
         )
         .`with`(ChronoField.ERA, calendar.get(Calendar.ERA))
         .plusDays(calendar.get(Calendar.DAY_OF_MONTH) - 1)
-      val zoned = local.atZone(zone.toZoneId)
-      val transition = zone.toZoneId.getRules.getTransition(local)
+      val zoneId = zone.toZoneId
+      val zoned = local.atZone(zoneId)
       val adjusted =
-        if transition != null && transition.isOverlap then
-          val standardOffset = calendar.get(Calendar.ZONE_OFFSET)
-          val daylightOffset = calendar.get(Calendar.DST_OFFSET)
-          calendar.add(Calendar.DAY_OF_MONTH, 1)
-          if standardOffset == calendar.get(Calendar.ZONE_OFFSET) &&
-            daylightOffset == calendar.get(Calendar.DST_OFFSET)
-          then zoned.withLaterOffsetAtOverlap()
-          else zoned.withEarlierOffsetAtOverlap()
-        else zoned
+        Option(zoneId.getRules.getTransition(local))
+          .filter(_.isOverlap)
+          .fold(zoned): _ =>
+            val standardOffset = calendar.get(Calendar.ZONE_OFFSET)
+            val daylightOffset = calendar.get(Calendar.DST_OFFSET)
+            calendar.add(Calendar.DAY_OF_MONTH, 1)
+            if standardOffset == calendar.get(Calendar.ZONE_OFFSET) &&
+              daylightOffset == calendar.get(Calendar.DST_OFFSET)
+            then zoned.withLaterOffsetAtOverlap()
+            else zoned.withEarlierOffsetAtOverlap()
       adjusted.toInstant
