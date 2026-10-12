@@ -205,6 +205,15 @@ class SparkResultRoundTripSuite extends munit.FunSuite {
             )
       finally TimeZone.setDefault(originalZone)
 
+  private case class TemporalValues(
+      date: Option[java.sql.Date],
+      timestamp: Option[java.sql.Timestamp],
+      dates: Seq[java.sql.Date],
+      timestamps: Seq[java.sql.Timestamp],
+      dateMap: Map[String, java.sql.Date],
+      timestampMap: Map[String, java.sql.Timestamp]
+  )
+
   Seq("UTC", "America/Los_Angeles").foreach: zone =>
     test(s"decodes every SQL date cutover gap day from proleptic Arrow dates in $zone"):
       val originalZone = TimeZone.getDefault
@@ -253,6 +262,43 @@ class SparkResultRoundTripSuite extends munit.FunSuite {
         )
       finally TimeZone.setDefault(originalZone)
 
+    test(s"decodes nested SQL calendar values from independent Arrow values in $zone"):
+      val originalZone = TimeZone.getDefault
+      try
+        TimeZone.setDefault(TimeZone.getTimeZone(zone))
+        val date = LocalDate.parse("1582-10-10")
+        val instant = LocalDateTime
+          .parse("1582-10-10T12:34:56.123456")
+          .atZone(java.time.ZoneId.of(zone))
+          .toInstant
+        val encoder = Encoder[TemporalValues]
+        val result = roundTrip(
+          encoder.schema,
+          Seq(
+            Seq(
+              date,
+              instant,
+              Seq(date, null),
+              Seq(instant, null),
+              Map("gap" -> date),
+              Map("gap" -> instant)
+            )
+          )
+        )
+        val expectedDate = java.sql.Date.valueOf("1582-10-15")
+        val expectedTimestamp = java.sql.Timestamp.valueOf("1582-10-15 12:34:56.123456")
+        assertEquals(
+          encoder.fromRow(result.toArray.head),
+          TemporalValues(
+            Some(expectedDate),
+            Some(expectedTimestamp),
+            Seq(expectedDate, null),
+            Seq(expectedTimestamp, null),
+            Map("gap" -> expectedDate),
+            Map("gap" -> expectedTimestamp)
+          )
+        )
+      finally TimeZone.setDefault(originalZone)
 
   test("java.sql.Date encoder still accepts an existing SQL date"):
     val encoder = Encoder[java.sql.Date]

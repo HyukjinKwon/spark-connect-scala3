@@ -153,11 +153,15 @@ private[sql] object SparkResult {
       case v: NullVector => null
       // MapVector extends ListVector, so it must be matched first.
       case v: MapVector => mapValue(v, i)
-      case v: ListVector => normalize(v.getObject(i))
+      case v: ListVector => listValue(v, i)
       case v: StructVector => structValue(v, i)
       case other => normalize(other.getObject(i))
     }
   }
+
+  private def listValue(vector: ListVector, i: Int): Seq[Any] =
+    (vector.getElementStartIndex(i) until vector.getElementEndIndex(i))
+      .map(index => getValue(vector.getDataVector, index))
 
   private def microsToInstant(micros: Long): Instant = {
     val seconds = Math.floorDiv(micros, MICROS_PER_SECOND)
