@@ -74,6 +74,86 @@ class IntegrationSuite extends munit.FunSuite {
         try session.close()
         finally java.util.TimeZone.setDefault(originalZone)
 
+  Seq("UTC", "America/Los_Angeles").foreach: zone =>
+    test(s"SQL cutover gap results normalize to October 15 in $zone"):
+      val originalZone = java.util.TimeZone.getDefault
+      val session = spark.newSession()
+      try
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(zone))
+        session.conf.set("spark.sql.session.timeZone", zone)
+        val date = session.sql("SELECT DATE '1582-10-10'").as[java.sql.Date].collect().head
+        assertEquals(date.toLocalDate, java.time.LocalDate.parse("1582-10-15"))
+        val timestamp = session
+          .sql("SELECT TIMESTAMP '1582-10-10 12:34:56.123456'")
+          .as[java.sql.Timestamp]
+          .collect()
+          .head
+        assertEquals(
+          timestamp.toLocalDateTime,
+          java.time.LocalDateTime.parse("1582-10-15T12:34:56.123456")
+        )
+        assertEquals(
+          session.range(1).select(lit(date)).as[java.sql.Date].collect().head.toLocalDate,
+          java.time.LocalDate.parse("1582-10-15")
+        )
+        assertEquals(
+          session.createDataset(Seq(date)).collect().head.toLocalDate,
+          java.time.LocalDate.parse("1582-10-15")
+        )
+        val nestedDates = session
+          .sql("SELECT array(DATE '1582-10-10', CAST(NULL AS DATE))")
+          .as[Seq[java.sql.Date]]
+          .collect()
+          .head
+        assertEquals(
+          nestedDates.map(d => Option(d).map(_.toLocalDate)),
+          Seq(Some(java.time.LocalDate.parse("1582-10-15")), None)
+        )
+        val nestedTimestamps = session
+          .sql("SELECT array(TIMESTAMP '1582-10-10 12:34:56.123456', CAST(NULL AS TIMESTAMP))")
+          .as[Seq[java.sql.Timestamp]]
+          .collect()
+          .head
+        assertEquals(
+          nestedTimestamps.map(t => Option(t).map(_.toLocalDateTime)),
+          Seq(Some(java.time.LocalDateTime.parse("1582-10-15T12:34:56.123456")), None)
+        )
+        val leap = java.sql.Timestamp.valueOf("1000-02-29 01:02:03.123456")
+        val expectedLeap = java.time.LocalDateTime
+          .parse("1000-03-01T01:02:03.123456")
+          .atZone(java.time.ZoneId.of(zone))
+          .toInstant
+        assertEquals(
+          session.range(1).select(lit(leap)).as[java.time.Instant].collect().head,
+          expectedLeap
+        )
+        assertEquals(
+          session.createDataset(Seq(leap)).as[java.time.Instant].collect().head,
+          expectedLeap
+        )
+      finally
+        try session.close()
+        finally java.util.TimeZone.setDefault(originalZone)
+
+    test(s"SQL timestamp collection uses JVM zone $zone with a different session zone"):
+      val originalZone = java.util.TimeZone.getDefault
+      val session = spark.newSession()
+      try
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone(zone))
+        val sessionZone = if zone == "UTC" then "America/Los_Angeles" else "UTC"
+        session.conf.set("spark.sql.session.timeZone", sessionZone)
+        val local = java.time.LocalDateTime.parse("1800-01-01T12:34:56.123456")
+        val instant = local.atZone(java.time.ZoneId.of(sessionZone)).toInstant
+        val query = session.sql("SELECT TIMESTAMP '1800-01-01 12:34:56.123456'")
+        assertEquals(query.as[java.time.Instant].collect().head, instant)
+        assertEquals(
+          query.as[java.sql.Timestamp].collect().head.toLocalDateTime,
+          instant.atZone(java.time.ZoneId.of(zone)).toLocalDateTime
+        )
+      finally
+        try session.close()
+        finally java.util.TimeZone.setDefault(originalZone)
+
   test("parent session can run queries after closing its new session"):
     val parent = spark.newSession()
     try
