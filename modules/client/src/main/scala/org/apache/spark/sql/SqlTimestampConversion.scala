@@ -17,17 +17,25 @@
 
 package org.apache.spark.sql
 
-import java.sql.Timestamp
+import java.sql.{Date, Timestamp}
 import java.time.{Instant, LocalDate, LocalDateTime}
 import java.time.temporal.ChronoField
 import java.util.{Calendar, TimeZone}
 
-/** Spark's SQL timestamps preserve local fields across the hybrid and proleptic calendars. */
+/** Spark's SQL dates and timestamps use hybrid-calendar fields for proleptic wire values. */
 private[sql] object SqlTimestampConversion:
   // Spark's rebasing tables have no differences at or after 1900-01-01T00:00:00Z.
   private val lastRebaseInstant = Instant.parse("1900-01-01T00:00:00Z")
-  private val julianEnd = LocalDateTime.of(1582, 10, 4, 23, 59, 59, 999999999)
+  private val julianEnd = LocalDate.of(1582, 10, 4)
   private val gregorianStart = LocalDate.of(1582, 10, 15)
+
+  // The ten missing hybrid-calendar dates all map to the first Gregorian date in Spark.
+  private def normalizeCutoverDate(date: LocalDate): LocalDate =
+    if date.isAfter(julianEnd) && date.isBefore(gregorianStart) then gregorianStart
+    else date
+
+  /** Applies Spark's cutover normalization before building a SQL date. */
+  def toJavaDate(date: LocalDate): Date = Date.valueOf(normalizeCutoverDate(date))
 
   /** Mirrors SparkDateTimeUtils.toJavaTimestamp, including historical JVM zone offsets. */
   def toJavaTimestamp(instant: Instant): Timestamp =
@@ -37,11 +45,7 @@ private[sql] object SqlTimestampConversion:
       val zoneId = zone.toZoneId
       val zoned = instant.atZone(zoneId)
       val local = zoned.toLocalDateTime
-      // Spark maps dates in the Gregorian cutover gap to October 15.
-      val fields =
-        if local.isAfter(julianEnd) && local.isBefore(gregorianStart.atStartOfDay()) then
-          LocalDateTime.of(gregorianStart, local.toLocalTime)
-        else local
+      val fields = LocalDateTime.of(normalizeCutoverDate(local.toLocalDate), local.toLocalTime)
       val calendar = new Calendar.Builder()
         .setCalendarType("gregory")
         .setDate(fields.getYear, fields.getMonthValue - 1, fields.getDayOfMonth)

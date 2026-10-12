@@ -128,7 +128,7 @@ object Encoder {
       DateType,
       value =>
         value match
-          case date: java.time.LocalDate => java.sql.Date.valueOf(date)
+          case date: java.time.LocalDate => SqlTimestampConversion.toJavaDate(date)
           case other => other.asInstanceOf[java.sql.Date],
       isNullable = true
     )
