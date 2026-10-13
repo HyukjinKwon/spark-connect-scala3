@@ -17,12 +17,13 @@
 package org.apache.spark.sql.connect.client
 
 import java.time.{Instant, LocalDate, LocalDateTime}
+import java.util.TimeZone
 
 import com.google.protobuf.ByteString
 import org.apache.arrow.memory.RootAllocator
 
 import org.apache.spark.connect.proto
-import org.apache.spark.sql.{Encoder, Row}
+import org.apache.spark.sql.{Column, Encoder, Row}
 import org.apache.spark.sql.connect.common.DataTypeProtoConverter
 import org.apache.spark.sql.types.*
 
@@ -144,6 +145,170 @@ class SparkResultRoundTripSuite extends munit.FunSuite {
     assertEquals(r.getInstant(1), Instant.parse("2024-02-29T12:34:56.000789Z"))
     assertEquals(r.getAs[LocalDateTime](2), ldt)
   }
+
+  Seq("UTC", "America/Los_Angeles").foreach: zone =>
+    test(s"round-trips nullable java.sql.Date calendar dates through Arrow in $zone"):
+      val originalZone = TimeZone.getDefault
+      try
+        TimeZone.setDefault(TimeZone.getTimeZone(zone))
+        val encoder = Encoder[java.sql.Date]
+        val dates = Seq("1969-12-31", "1000-01-01", "0001-01-01").map(LocalDate.parse)
+        val input = dates.map(java.sql.Date.valueOf) :+ null
+        val result = roundTrip(encoder.schema, input.map(value => encoder.toRow(value).toSeq))
+        val decoded = result.toArray.map(encoder.fromRow).toSeq
+        assertEquals(decoded, input)
+        assertEquals(decoded.dropRight(1).map(_.toLocalDate), dates)
+        assertEquals(decoded.last, null)
+      finally TimeZone.setDefault(originalZone)
+
+  test("round-trips nullable java.sql.Timestamp values through Arrow with microsecond precision"):
+    val encoder = Encoder[java.sql.Timestamp]
+    val input = Seq(java.sql.Timestamp.from(Instant.parse("1969-12-31T23:59:59.999999Z")), null)
+    val result = roundTrip(encoder.schema, input.map(value => encoder.toRow(value).toSeq))
+    assertEquals(result.toArray.map(encoder.fromRow).toSeq, input)
+
+  Seq("UTC", "America/Los_Angeles").foreach: zone =>
+    test(s"decodes historical SQL timestamp fields from independent Arrow instants in $zone"):
+      val originalZone = TimeZone.getDefault
+      try
+        TimeZone.setDefault(TimeZone.getTimeZone(zone))
+        val local = Seq("0001-01-01T00:00:00", "1000-01-01T00:00:00.123456", "1800-01-01T00:00:00")
+          .map(LocalDateTime.parse)
+        val instants = local.map(_.atZone(java.time.ZoneId.of(zone)).toInstant)
+        val wireEncoder = Encoder[Instant]
+        val result = roundTrip(wireEncoder.schema, instants.map(i => wireEncoder.toRow(i).toSeq))
+        val decoded = result.toArray.map(Encoder[java.sql.Timestamp].fromRow).toSeq
+        assertEquals(decoded.map(_.toLocalDateTime), local)
+      finally TimeZone.setDefault(originalZone)
+
+    test(s"encodes historical SQL timestamps to Spark Arrow and literal instants in $zone"):
+      val originalZone = TimeZone.getDefault
+      try
+        TimeZone.setDefault(TimeZone.getTimeZone(zone))
+        val local = Seq("0001-01-01T00:00:00", "1000-01-01T00:00:00.123456", "1800-01-01T00:00:00")
+          .map(LocalDateTime.parse)
+        val expected = local.map(_.atZone(java.time.ZoneId.of(zone)).toInstant)
+        val input = local.map(java.sql.Timestamp.valueOf)
+        val encoder = Encoder[java.sql.Timestamp]
+        val result = roundTrip(encoder.schema, input.map(t => encoder.toRow(t).toSeq))
+        assertEquals(result.toArray.map(_.getInstant(0)).toSeq, expected)
+        input
+          .zip(expected)
+          .foreach: (timestamp, instant) =>
+            val micros = Math.addExact(
+              Math.multiplyExact(instant.getEpochSecond, 1000000L),
+              instant.getNano / 1000L
+            )
+            assertEquals(
+              Column.toLiteralProto(timestamp).literalType,
+              proto.Expression.Literal.LiteralType.Timestamp(micros)
+            )
+      finally TimeZone.setDefault(originalZone)
+
+  private case class TemporalValues(
+      date: Option[java.sql.Date],
+      timestamp: Option[java.sql.Timestamp],
+      dates: Seq[java.sql.Date],
+      timestamps: Seq[java.sql.Timestamp],
+      dateMap: Map[String, java.sql.Date],
+      timestampMap: Map[String, java.sql.Timestamp]
+  )
+
+  Seq("UTC", "America/Los_Angeles").foreach: zone =>
+    test(s"decodes every SQL date cutover gap day from proleptic Arrow dates in $zone"):
+      val originalZone = TimeZone.getDefault
+      try
+        TimeZone.setDefault(TimeZone.getTimeZone(zone))
+        val input = (4 to 15).map(day => LocalDate.of(1582, 10, day))
+        val wireEncoder = Encoder[LocalDate]
+        val result = roundTrip(wireEncoder.schema, input.map(d => wireEncoder.toRow(d).toSeq))
+        val expected = LocalDate.of(1582, 10, 4) +: Seq.fill(11)(LocalDate.of(1582, 10, 15))
+        assertEquals(
+          result.toArray.map(Encoder[java.sql.Date].fromRow).map(_.toLocalDate).toSeq,
+          expected
+        )
+      finally TimeZone.setDefault(originalZone)
+
+    test(s"decodes SQL timestamp cutover gaps with fixed calendar fields in $zone"):
+      val originalZone = TimeZone.getDefault
+      try
+        TimeZone.setDefault(TimeZone.getTimeZone(zone))
+        val local = LocalDateTime.parse("1582-10-10T12:34:56.123456")
+        val wireEncoder = Encoder[Instant]
+        val instant = local.atZone(java.time.ZoneId.of(zone)).toInstant
+        val result = roundTrip(wireEncoder.schema, Seq(wireEncoder.toRow(instant).toSeq))
+        assertEquals(
+          Encoder[java.sql.Timestamp].fromRow(result.toArray.head).toLocalDateTime,
+          LocalDateTime.parse("1582-10-15T12:34:56.123456")
+        )
+      finally TimeZone.setDefault(originalZone)
+
+    test(s"encodes Julian-only SQL timestamp leap days as proleptic March 1 in $zone"):
+      val originalZone = TimeZone.getDefault
+      try
+        TimeZone.setDefault(TimeZone.getTimeZone(zone))
+        val input = java.sql.Timestamp.valueOf("1000-02-29 01:02:03.123456")
+        val expected = LocalDateTime
+          .parse("1000-03-01T01:02:03.123456")
+          .atZone(java.time.ZoneId.of(zone))
+          .toInstant
+        val encoder = Encoder[java.sql.Timestamp]
+        val result = roundTrip(encoder.schema, Seq(encoder.toRow(input).toSeq))
+        assertEquals(result.toArray.head.getInstant(0), expected)
+        assertEquals(
+          Column.toLiteralProto(input).literalType,
+          proto.Expression.Literal.LiteralType
+            .Timestamp(expected.getEpochSecond * 1000000L + expected.getNano / 1000L)
+        )
+      finally TimeZone.setDefault(originalZone)
+
+    test(s"decodes nested SQL calendar values from independent Arrow values in $zone"):
+      val originalZone = TimeZone.getDefault
+      try
+        TimeZone.setDefault(TimeZone.getTimeZone(zone))
+        val date = LocalDate.parse("1582-10-10")
+        val instant = LocalDateTime
+          .parse("1582-10-10T12:34:56.123456")
+          .atZone(java.time.ZoneId.of(zone))
+          .toInstant
+        val encoder = Encoder[TemporalValues]
+        val result = roundTrip(
+          encoder.schema,
+          Seq(
+            Seq(
+              date,
+              instant,
+              Seq(date, null),
+              Seq(instant, null),
+              Map("gap" -> date),
+              Map("gap" -> instant)
+            )
+          )
+        )
+        val expectedDate = java.sql.Date.valueOf("1582-10-15")
+        val expectedTimestamp = java.sql.Timestamp.valueOf("1582-10-15 12:34:56.123456")
+        assertEquals(
+          encoder.fromRow(result.toArray.head),
+          TemporalValues(
+            Some(expectedDate),
+            Some(expectedTimestamp),
+            Seq(expectedDate, null),
+            Seq(expectedTimestamp, null),
+            Map("gap" -> expectedDate),
+            Map("gap" -> expectedTimestamp)
+          )
+        )
+      finally TimeZone.setDefault(originalZone)
+
+  test("java.sql.Date encoder still accepts an existing SQL date"):
+    val encoder = Encoder[java.sql.Date]
+    val input = java.sql.Date.valueOf("1969-12-31")
+    assertEquals(encoder.fromRow(encoder.toRow(input)), input)
+
+  test("java.sql.Timestamp encoder still accepts an existing SQL timestamp"):
+    val encoder = Encoder[java.sql.Timestamp]
+    val input = java.sql.Timestamp.from(Instant.parse("1969-12-31T23:59:59.999999Z"))
+    assertEquals(encoder.fromRow(encoder.toRow(input)), input)
 
   test("round-trips decimal with declared scale") {
     val schema = StructType(Array(StructField("amount", DecimalType(10, 2))))

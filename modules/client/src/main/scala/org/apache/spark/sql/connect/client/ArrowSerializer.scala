@@ -31,7 +31,7 @@ import org.apache.arrow.vector.ipc.ArrowStreamWriter
 import org.apache.arrow.vector.types.{DateUnit, FloatingPointPrecision, TimeUnit}
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, FieldType, Schema}
 
-import org.apache.spark.sql.Row
+import org.apache.spark.sql.{Row, SqlTimestampConversion}
 import org.apache.spark.sql.types._
 
 /**
@@ -385,7 +385,8 @@ object ArrowSerializer {
   /** Converts a timestamp-ish value to epoch microseconds (mirrors [[SparkResult]] decode). */
   private def toEpochMicros(value: Any): Long = value match {
     case i: Instant => instantToMicros(i)
-    case t: java.sql.Timestamp => instantToMicros(t.toInstant)
+    case t: java.sql.Timestamp =>
+      instantToMicros(SqlTimestampConversion.toInstant(t))
     case ldt: LocalDateTime => instantToMicros(ldt.toInstant(ZoneOffset.UTC))
     case n: Number => n.longValue()
     case other => throw coerceError(other, "Timestamp")

@@ -312,7 +312,8 @@ object Column {
       case d: java.time.LocalDate => LiteralType.Date(d.toEpochDay.toInt)
       case d: java.sql.Date => LiteralType.Date(d.toLocalDate.toEpochDay.toInt)
       case t: java.time.Instant => LiteralType.Timestamp(instantToMicros(t))
-      case t: java.sql.Timestamp => LiteralType.Timestamp(instantToMicros(t.toInstant))
+      case t: java.sql.Timestamp =>
+        LiteralType.Timestamp(instantToMicros(SqlTimestampConversion.toInstant(t)))
       case t: java.time.LocalDateTime =>
         LiteralType.TimestampNtz(instantToMicros(t.toInstant(java.time.ZoneOffset.UTC)))
       case s: Seq[?] => arrayLiteral(s)
