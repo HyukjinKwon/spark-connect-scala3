@@ -45,7 +45,7 @@ This project is that client for Scala 3.
 
 `spark-connect-scala3` implements the Spark Connect DataFrame, SQL, Structured Streaming, and Declarative Pipelines API, modeled directly on Apache Spark's Scala API (`SparkSession`, `DataFrame`, `Column`, `functions`, `Dataset[T]`, ...), so existing Spark Scala code ports almost verbatim. Results decode through Apache Arrow into ordered, name-addressable `Row`s.
 
-It also supports typed Datasets: `df.as[T]` and `spark.createDataset(values)` for case classes, tuples, primitives, `Option`, collections, and maps. Encoders run entirely on the client, so no closure is sent to the server.
+It also supports typed Datasets: `df.as[T]` and `spark.createDataset(values)` for case classes, tuples, primitives, `Option`, collections, and maps, a typed `spark.range`, typed `select(col.as[T], ...)`, `joinWith`, and every relational operator that keeps the element type (`filter`, `orderBy`, `limit`, `union`, ...). Encoders run entirely on the client, so no closure is sent to the server.
 
 ### Not supported
 
@@ -57,13 +57,14 @@ The following all require running a user-provided JVM closure on the server (the
 
 Also out of scope because they are not part of the Spark Connect protocol at all:
 
-- The **RDD API** (`Dataset.rdd`, `SparkContext`, accumulators, broadcast variables).
+- The **RDD API** (`Dataset.rdd`, `SparkContext`, accumulators, broadcast variables) and other in-process JVM state (`queryExecution`, `sessionState`).
 - The **MLlib-over-Connect** surface.
+- **Artifact upload** (`addArtifact(s)`), which only matters for shipping UDF code.
 
 ## Project facts
 
 - **Maven coordinates**: `com.github.hyukjinkwon` :: `spark-connect-scala3-client`, built for Scala 3.3.x.
-- **Spark compatibility**: built and tested against Apache Spark 4.0.x and 4.1.x (latest 4.1.2). The protobufs are sourced from Spark 4.1.2.
+- **Spark compatibility**: speaks the Spark Connect 4.3.0 protocol (the protobufs are sourced from Apache Spark 4.3.0) and is tested against Apache Spark 3.5.x, 4.0.x, 4.1.x, 4.2.x, and 4.3.x. APIs added in a newer Spark release need a server at least that new.
 - **Source**: [HyukjinKwon/spark-connect-scala3](https://github.com/HyukjinKwon/spark-connect-scala3).
 
 ## Where to next

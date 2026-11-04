@@ -5,7 +5,8 @@
 - **JDK 17 or newer** (Temurin is the reference JDK).
 - **Scala 3.3.x** (the Scala 3 LTS line). The client is published with the
   `_3` Scala suffix.
-- A reachable **Spark Connect server** running Apache Spark 4.0.x or 4.1.x.
+- A reachable **Spark Connect server** running Apache Spark 3.5.x or newer (4.3.x
+  recommended: APIs added in a newer Spark release need a server at least that new).
 
 ## Add the dependency
 
@@ -79,10 +80,10 @@ quickest way to get a server is to download a Spark distribution and run the
 bundled Connect server.
 
 ```bash
-# Download a Spark distribution (4.1.2 shown here).
-curl -L https://archive.apache.org/dist/spark/spark-4.1.2/spark-4.1.2-bin-hadoop3.tgz -o spark.tgz
+# Download a Spark distribution (4.3.0 shown here).
+curl -L https://archive.apache.org/dist/spark/spark-4.3.0/spark-4.3.0-bin-hadoop3.tgz -o spark.tgz
 tar xzf spark.tgz
-cd spark-4.1.2-bin-hadoop3
+cd spark-4.3.0-bin-hadoop3
 
 # Start the Connect server (requires Java 17+).
 # Spark 4.0+ bundles the Connect server, so no extra packages are needed.
@@ -98,7 +99,7 @@ On Spark 3.5.x the Connect server is not bundled. Use a Scala 2.13 distribution
 and pull the server package in explicitly:
 
 ```bash
-./sbin/start-connect-server.sh --packages "org.apache.spark:spark-connect_2.13:3.5.5"
+./sbin/start-connect-server.sh --packages "org.apache.spark:spark-connect_2.13:3.5.9"
 ```
 
 ## Verify the connection

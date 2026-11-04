@@ -66,6 +66,29 @@ pipeline.defineFlow(
   target = Some("events"))
 ```
 
+## Auto CDC flows (Spark 4.2+)
+
+`createAutoCdcFlow` applies a stream of change-data-capture events to a
+streaming table, keyed by `keys` and ordered by `sequenceBy`. Define the target
+table without a query first. SCD type 2 targets (`storedAsScdType = Some(2)`) and
+history tracking need a Spark 4.3+ server:
+
+```scala
+pipeline.createTable("customers")
+pipeline.createAutoCdcFlow(
+  target = "customers",
+  source = "customer_changes",
+  keys = Seq(col("customer_id")),
+  sequenceBy = col("updated_at"),
+  applyAsDeletes = Some(col("op") === "DELETE"),
+  exceptColumnList = Seq(col("op")),
+  storedAsScdType = Some(2))
+```
+
+`columnList` and `exceptColumnList` are mutually exclusive, and
+`trackHistoryColumnList` / `trackHistoryExceptColumnList` choose which columns
+open a new history record for SCD type 2 targets.
+
 ## Defining a graph from SQL
 
 You can register datasets and flows from a SQL definition instead of the

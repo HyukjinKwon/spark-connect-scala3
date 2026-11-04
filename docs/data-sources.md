@@ -27,7 +27,31 @@ spark.read.parquet("/data/events")
 spark.read.json("/data/events.json")
 spark.read.csv("/data/people.csv")
 spark.read.orc("/data/events.orc")
-spark.read.text("/data/log.txt")
+spark.read.xml("/data/events.xml")
+spark.read.text("/data/log.txt")      // a DataFrame with a `value` column
+spark.read.textFile("/data/log.txt")  // a Dataset[String] of lines
+```
+
+### Parsing in-memory data
+
+`csv`, `json`, and `xml` also parse a `Dataset[String]` of records (XML needs a
+Spark 4.2+ server):
+
+```scala
+val lines = spark.createDataset(Seq("<row><a>1</a></row>", "<row><a>2</a></row>"))
+spark.read.option("rowTag", "row").schema("a INT").xml(lines).show()
+```
+
+### Change data capture (Spark 4.2+)
+
+`changes` reads the row-level changes of a table whose catalog supports change
+logs, with options choosing the range and post-processing:
+
+```scala
+spark.read
+  .option("startingVersion", "10")
+  .option("endingVersion", "20")
+  .changes("my_table")
 ```
 
 ### Schemas
@@ -104,7 +128,7 @@ import org.apache.spark.sql.SaveMode
 df.write.mode(SaveMode.Overwrite).parquet("/data/numbers")
 ```
 
-### Partitioning and bucketing
+### Partitioning, bucketing, and clustering
 
 ```scala
 df.write
@@ -115,6 +139,20 @@ df.write
   .bucketBy(8, "id")
   .sortBy("id")
   .saveAsTable("bucketed_table")
+
+df.write
+  .clusterBy("country", "year")
+  .saveAsTable("clustered_table")
+```
+
+### Schema evolution
+
+`withSchemaEvolution()` lets a write add the new columns of `df` to the target
+table, for table formats that support it (Spark 4.2+):
+
+```scala
+df.write.mode("append").withSchemaEvolution().saveAsTable("analytics.events")
+df.writeTo("analytics.events").withSchemaEvolution().append()
 ```
 
 ### Tables

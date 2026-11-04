@@ -1,7 +1,9 @@
 # SQL
 
-`spark.sql(...)` runs Spark SQL on the server and returns a lazy `DataFrame`.
-You can freely mix SQL with the DataFrame API.
+`spark.sql(...)` runs Spark SQL on the server and returns a `DataFrame`. As in
+Apache Spark, a query stays lazy until you run an action, while a command (DDL or
+DML such as `CREATE TABLE`, `INSERT`, `DROP VIEW`, or `SET`) runs immediately. You
+can freely mix SQL with the DataFrame API.
 
 ```scala
 import org.apache.spark.sql.SparkSession
@@ -29,6 +31,22 @@ spark.sql("SELECT id FROM range(100)")
   .count()
 ```
 
+## Commands run immediately
+
+`spark.sql` sends the statement to the server as soon as it is called. Commands
+execute right away and return their output, if any, as a DataFrame, so no action
+is needed to make them take effect:
+
+```scala
+spark.sql("CREATE TABLE IF NOT EXISTS events (id BIGINT, kind STRING) USING parquet")
+spark.sql("INSERT INTO events VALUES (1, 'click'), (2, 'view')")
+spark.sql("SHOW TABLES").show()
+spark.sql("DROP TABLE events")
+```
+
+Queries (`SELECT ...`) are still lazy: the returned DataFrame runs when you call an
+action such as `show`, `collect`, or `count`.
+
 ## Parameterized SQL
 
 Keep user input out of the query string by passing parameters. Use a `Map` for
@@ -43,6 +61,18 @@ spark.sql(
 
 // Positional parameters.
 spark.sql("SELECT * FROM range(100) WHERE id = ?", Array(42)).show()
+```
+
+## Table-valued functions
+
+`spark.tvf` calls the built-in table-valued functions directly (Spark 4.0+
+servers):
+
+```scala
+spark.tvf.range(3).show()
+spark.tvf.explode(array(lit(1), lit(2))).show()
+spark.tvf.json_tuple(lit("""{"a": 1, "b": 2}"""), lit("a"), lit("b")).show()
+spark.tvf.sql_keywords().show()
 ```
 
 ## Temporary views

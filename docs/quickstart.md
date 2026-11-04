@@ -28,7 +28,7 @@ val spark = SparkSession.builder
 You can inspect the server version and the session id:
 
 ```scala
-spark.version    // the Spark version reported by the server, e.g. "4.1.2"
+spark.version    // the Spark version reported by the server, e.g. "4.3.0"
 spark.sessionId  // the client session id
 ```
 
@@ -68,9 +68,15 @@ and `range(start, end, step, numPartitions)`:
 spark.range(10, 20, 2).show()   // 10, 12, 14, 16, 18
 ```
 
+As in Apache Spark, `range` returns a typed `Dataset[java.lang.Long]`, so
+`spark.range(3).collect()` gives `Array[java.lang.Long]`. Call `.toDF()` when you
+want a `DataFrame` of `Row`s.
+
 ## sql
 
-Run Spark SQL and get back a lazy DataFrame:
+Run Spark SQL and get back a DataFrame. Queries stay lazy until an action runs,
+while commands such as `CREATE`, `INSERT`, and `DROP` run immediately, as in
+Apache Spark:
 
 ```scala
 spark.sql("SELECT 1 AS a, 'hello' AS b").show()
@@ -120,7 +126,7 @@ df.show(5, 0, vertical = true)  // one field per line
 access by position with typed getters:
 
 ```scala
-val rows = spark.range(3).collect()
+val rows = spark.range(3).toDF().collect()
 rows.foreach(row => println(row.getLong(0)))
 ```
 
@@ -128,8 +134,8 @@ Other common actions:
 
 ```scala
 spark.range(100).count()    // 100
-spark.range(100).take(3)    // first 3 Rows
-spark.range(100).first()    // the first Row
+spark.range(100).take(3)    // the first 3 ids, as Array[java.lang.Long]
+spark.range(100).first()    // the first id
 spark.range(0).isEmpty      // true
 ```
 

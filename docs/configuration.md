@@ -19,6 +19,12 @@ The host is required; the port defaults to **15002**. Parameters live after a
 | `user_agent` | Client user agent.                                              |
 | `use_ssl`    | `true` / `false` to force TLS on or off.                        |
 | `session_id` | Reuse a specific server-side session id.                        |
+| `user_name`  | The Spark user name.                                            |
+| `grpc_max_message_size` | Maximum inbound gRPC message size, in bytes.         |
+| `grpc_keepalive_enabled` | `true` / `false`: send keepalive PINGs (default on). |
+| `grpc_keepalive_time_ms` | Idle time before a keepalive PING (default 60000).  |
+| `grpc_keepalive_timeout_ms` | Time to wait for a PING ack (default 20000).     |
+| `grpc_keepalive_without_calls` | Keep pinging with no RPC in flight (default on). |
 
 Examples:
 
@@ -84,6 +90,37 @@ spark.setActive()  // mark this session as the active one
 spark.stop()     // release the server-side session and close the connection
 ```
 
+`newSession()` opens another session on the same server, and `cloneSession()`
+(Spark 4.1+) copies this session's SQL configurations, temporary views, and
+registered functions into a new, independent session:
+
+```scala
+val other = spark.newSession()
+val copy = spark.cloneSession()
+```
+
+## Tags, interrupts, and operation status
+
+Every query the client runs carries an operation id and the tags the current
+thread has added, so you can interrupt work selectively:
+
+```scala
+spark.addTag("nightly-report")
+// ... start queries on this thread ...
+spark.interruptTag("nightly-report")  // ids of the interrupted operations
+spark.removeTag("nightly-report")
+spark.getTags()
+spark.clearTags()
+
+spark.interruptAll()
+spark.interruptOperation(operationId)
+```
+
+When a query fails, `SparkConnectClient.getOperationId(error)` returns the
+operation id of the failed execution. On Spark 4.2+ servers,
+`spark.client.getOperationStatuses()` reports the state of the session's
+operations.
+
 A robust pattern wraps the work in `try`/`finally`:
 
 ```scala
@@ -119,6 +156,14 @@ The client is resilient to transient network failures out of the box:
   saw via `ReattachExecute` instead of re-running the query, and periodically issues
   `ReleaseExecute` so the server can free buffered results. This is the same mechanism
   used by the official PySpark and JVM clients and works against Spark 3.5 and newer.
+
+- **Per-RPC deadlines.** Every RPC has a deadline (`RpcDeadlines`, the Apache
+  Spark 4.3 defaults). A result stream that hits its deadline is transparently
+  reattached rather than failed, bounded by `maxRetryExceptionElapsedTime`.
+- **Keepalive.** The client sends HTTP/2 keepalive PINGs, so a connection that
+  silently died (for example, dropped by a NAT gateway) fails with `UNAVAILABLE`
+  and is retried instead of hanging. Tune or disable it with the `grpc_keepalive_*`
+  connection-string parameters.
 
 Reattachable execution is enabled by default. It can be turned off (for debugging, or
 against a server that does not support it) when constructing the client:
