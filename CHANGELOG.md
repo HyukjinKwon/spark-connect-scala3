@@ -27,10 +27,11 @@ Brings the client to parity with the Scala Spark Connect client of Apache Spark
   `Encoders` factories (`Encoders.product`, `Encoders.tuple`, `Encoders.STRING`,
   boxed and `java.time` encoders, ...).
 - `Dataset`: `zip` (Spark 4.3+), `zipWithIndex` and `nearestByJoin` (Spark 4.2+),
-  subquery expressions `scalar()` / `exists()` and `Column.isin(dataset)` (Spark
-  4.0+), `groupingSets`, `repartitionById`, `withColumns(Map)`, `withMetadata`,
-  `metadataColumn`, `randomSplitAsList`, and the remaining overloads of `select`,
-  `agg`, `join`, `drop`, `dropDuplicates`, `cube`, `rollup`, `observe`, and friends.
+  subquery expressions `scalar()` / `exists()` (Spark 4.0+) and
+  `Column.isin(dataset)` (Spark 4.1+), `groupingSets`, `repartitionById`,
+  `withColumns(Map)`, `withMetadata`, `metadataColumn`, `randomSplitAsList`, and
+  the remaining overloads of `select`, `agg`, `join`, `drop`, `dropDuplicates`,
+  `cube`, `rollup`, `observe`, and friends.
 - `Column`: `try_cast`, `withField` / `dropFields`, `isInCollection`, `outer`,
   `transform`, `explain`, `!==`, the Java-friendly aliases (`plus`, `minus`,
   `multiply`, `divide`, `mod`, `equalTo`, `gt`, `lt`, `geq`, `leq`), and the

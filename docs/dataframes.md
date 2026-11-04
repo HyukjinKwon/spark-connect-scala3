@@ -211,8 +211,8 @@ queries
 
 ## Subqueries
 
-`scalar()` and `exists()` turn a DataFrame into a subquery expression, and
-`Column.isin(dataset)` tests membership in one (Spark 4.0+ servers):
+`scalar()` and `exists()` turn a DataFrame into a subquery expression (Spark 4.0+
+servers), and `Column.isin(dataset)` tests membership in one (Spark 4.1+ servers):
 
 ```scala
 val t = spark.range(10)

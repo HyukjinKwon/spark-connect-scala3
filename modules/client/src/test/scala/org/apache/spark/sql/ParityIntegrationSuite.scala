@@ -154,14 +154,16 @@ class ParityIntegrationSuite extends RemoteSparkSuite {
     }
   }
 
-  test("scalar, exists, and IN subqueries (Spark 4.0+)") {
+  test("scalar and exists (Spark 4.0+) and IN (Spark 4.1+) subqueries") {
     whenServerAtLeast(4, 0) {
       withSpark { s =>
         val t = s.range(10)
         val maxSmall = s.range(3).select(max(col("id")))
         assertEquals(t.where(col("id") <= maxSmall.scalar()).count(), 3L)
         assertEquals(t.where(s.range(1).exists()).count(), 10L)
-        assertEquals(t.where(col("id").isin(s.range(2).toDF())).count(), 2L)
+        whenServerAtLeast(4, 1) {
+          assertEquals(t.where(col("id").isin(s.range(2).toDF())).count(), 2L)
+        }
       }
     }
   }

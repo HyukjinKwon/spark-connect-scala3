@@ -133,7 +133,8 @@ class Column private[sql] (
 
   /**
    * True if the column's value is in the result of the single-column (or, for a `struct(...)`
-   * column, multi-column) subquery `ds`. Builds an `IN (subquery)` expression.
+   * column, multi-column) subquery `ds`. Builds an `IN (subquery)` expression, which needs a Spark
+   * 4.1+ server.
    */
   def isin(ds: Dataset[?]): Column =
     if (ds == null) {

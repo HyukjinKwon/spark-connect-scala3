@@ -48,10 +48,11 @@ Apache Spark 3.5, 4.0, 4.1, 4.2, and 4.3. The protocol is backward compatible, b
 features added in a later server release are unavailable on older servers:
 
 - **Spark 4.0+**: observed metrics (`Dataset.observe`), subqueries (`scalar`,
-  `exists`, `isin(dataset)`), `spark.tvf`, and the seeded forms that `uuid()` and
+  `exists`), `spark.tvf`, and the seeded forms that `uuid()` and
   `shuffle(e)` send (as Apache Spark 4.x clients do; on a 3.5 server use
   `expr("uuid()")`).
-- **Spark 4.1+**: Declarative Pipelines, `cloneSession`, and the `TIME` type.
+- **Spark 4.1+**: Declarative Pipelines, `cloneSession`, `isin(dataset)` IN
+  subqueries, and the `TIME` type.
 - **Spark 4.2+**: the catalog commands (`createDatabase`, `dropTable`,
   `listPartitions`, `listViews`, `getTableProperties`, ...), `zipWithIndex`,
   `nearestByJoin`, change data capture (`changes`), `Trigger.RealTime`, named

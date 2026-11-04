@@ -98,7 +98,7 @@ col("price").try_cast("int")                 // NULL instead of an error on bad 
 col("s").withField("b", lit(2))              // add or replace a struct field
 col("s").dropFields("a", "c")                // drop struct fields
 col("id").isInCollection(Seq(1, 2, 3))       // isin over a collection
-col("id").isin(spark.range(2).toDF())        // IN subquery (Spark 4.0+)
+col("id").isin(spark.range(2).toDF())        // IN subquery (Spark 4.1+)
 col("x").transform(c => c * 2)               // chain a Column => Column function
 col("a").plus(1).gt(col("b"))                // Java-friendly operator aliases
 ```
