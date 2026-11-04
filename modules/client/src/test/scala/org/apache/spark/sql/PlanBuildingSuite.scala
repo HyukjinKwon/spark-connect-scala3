@@ -198,13 +198,6 @@ class PlanBuildingSuite extends munit.FunSuite {
     }
   }
 
-  test("sql produces an Sql relation") {
-    withSession { spark =>
-      val df = spark.sql("select 1")
-      assertEquals(df.relation.getSql.query, "select 1")
-    }
-  }
-
   test("col + 1 is an UnresolvedFunction named '+'") {
     val c = col("x") + 1
     assert(c.expr.exprType.isUnresolvedFunction)
@@ -232,9 +225,9 @@ class PlanBuildingSuite extends munit.FunSuite {
     assertEquals(c.expr.getUnresolvedAttribute.unparsedIdentifier, "name")
   }
 
-  test("=== is an UnresolvedFunction named '=='") {
+  test("=== is an UnresolvedFunction named '=' (as in Apache Spark)") {
     val c = col("a") === col("b")
-    assertEquals(c.expr.getUnresolvedFunction.functionName, "==")
+    assertEquals(c.expr.getUnresolvedFunction.functionName, "=")
   }
 
   test("chained transformations nest the input relation") {

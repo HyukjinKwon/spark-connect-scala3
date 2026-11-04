@@ -91,6 +91,6 @@ class FunctionsSuite extends munit.FunSuite {
     assertEquals(name(map_values(a)), "map_values")
     assertEquals(name(array(a, b)), "array")
     assertEquals(name(coalesce(a, b)), "coalesce")
-    assertEquals(name(isnull(a)), "isnull")
+    assertEquals(name(isnull(a)), "isNull")
   }
 }

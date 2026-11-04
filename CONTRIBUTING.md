@@ -46,9 +46,9 @@ with `SPARK_CONNECT_TEST_REMOTE`:
 
 ```bash
 # Download and start a server (Spark 4.0+ bundles the Connect server).
-curl -L https://archive.apache.org/dist/spark/spark-4.1.2/spark-4.1.2-bin-hadoop3.tgz -o spark.tgz
+curl -L https://archive.apache.org/dist/spark/spark-4.3.0/spark-4.3.0-bin-hadoop3.tgz -o spark.tgz
 tar xzf spark.tgz
-./spark-4.1.2-bin-hadoop3/sbin/start-connect-server.sh
+./spark-4.3.0-bin-hadoop3/sbin/start-connect-server.sh
 
 # Run the integration tests against it.
 SPARK_CONNECT_TEST_REMOTE=sc://localhost:15002 sbt "client/testOnly *Integration*"

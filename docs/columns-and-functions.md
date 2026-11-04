@@ -91,10 +91,23 @@ col("tags").getItem(0)        // array element
 col("address").getField("city")  // struct field
 ```
 
+## More column operations
+
+```scala
+col("price").try_cast("int")                 // NULL instead of an error on bad input
+col("s").withField("b", lit(2))              // add or replace a struct field
+col("s").dropFields("a", "c")                // drop struct fields
+col("id").isInCollection(Seq(1, 2, 3))       // isin over a collection
+col("id").isin(spark.range(2).toDF())        // IN subquery (Spark 4.1+)
+col("x").transform(c => c * 2)               // chain a Column => Column function
+col("a").plus(1).gt(col("b"))                // Java-friendly operator aliases
+```
+
 ## The functions library
 
-`org.apache.spark.sql.functions` provides a large catalog. A representative
-selection by category:
+`org.apache.spark.sql.functions` mirrors every built-in function of Apache Spark
+4.3.0's `functions` object except `udf`/`udaf`. A function added in a newer Spark
+release needs a server at least that new. A representative selection by category:
 
 ### Aggregate
 
@@ -154,6 +167,32 @@ df.select(explode(split(col("line"), " ")).as("word"))
 ### Conditional and null handling
 
 `when`, `coalesce`, `nvl`, `nullif`, `greatest`, `least`, `isnull`, `isnan`.
+
+### JSON, CSV, and XML
+
+`from_json`, `to_json`, `schema_of_json`, `json_object_keys`, `from_csv`,
+`to_csv`, `from_xml`, `to_xml`, `schema_of_xml`, `xpath_string`.
+
+### Variant
+
+`parse_json`, `try_parse_json`, `variant_get`, `try_variant_get`,
+`is_variant_null`, `is_valid_variant`, `schema_of_variant`, `to_variant_object`.
+
+### URL, sketches, geospatial, and vectors
+
+- URL: `parse_url`, `try_parse_url`, `url_encode`, `url_decode`, `try_url_decode`.
+- Sketches: HyperLogLog (`hll_sketch_agg`, `hll_union`, `hll_sketch_estimate`),
+  KLL quantiles (`kll_sketch_agg_*`), Theta (`theta_sketch_agg`, ...), and Tuple
+  sketches (`tuple_sketch_agg_*`).
+- Geospatial: `st_geomfromwkb`, `st_asbinary`, `st_srid`, `st_setsrid`, ...
+- Vectors: `vector_cosine_similarity`, `vector_l2_distance`, `vector_norm`,
+  `vector_avg`, `vector_sum`.
+
+### Partition transforms
+
+`partitioning.years`, `partitioning.months`, `partitioning.days`,
+`partitioning.hours`, and `partitioning.bucket`, for
+`df.writeTo("t").partitionedBy(...)`.
 
 ### Window
 

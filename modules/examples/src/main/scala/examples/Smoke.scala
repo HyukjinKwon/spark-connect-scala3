@@ -31,7 +31,7 @@ object Smoke {
 
       println("== range/filter/collect ==")
       val rows = spark.range(10).filter(col("id") % 2 === 0).collect()
-      println(rows.map(_.getLong(0)).mkString(", "))
+      println(rows.mkString(", "))
 
       println("== show ==")
       spark.range(5).select(col("id"), (col("id") * 2).as("doubled")).show()

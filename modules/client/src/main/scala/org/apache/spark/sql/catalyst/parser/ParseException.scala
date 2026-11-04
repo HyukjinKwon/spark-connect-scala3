@@ -24,8 +24,13 @@ import org.apache.spark.sql.AnalysisException
  * `org.apache.spark.sql.catalyst.parser.ParseException`; extends [[AnalysisException]] so existing
  * `catch { case e: AnalysisException => ... }` handlers keep working.
  */
-class ParseException(message: String, cause: Throwable, errorClass: Option[String])
-    extends AnalysisException(message, cause, errorClass) {
+class ParseException(
+    message: String,
+    cause: Throwable,
+    errorClass: Option[String],
+    messageParameters: Map[String, String] = Map.empty,
+    sqlState: Option[String] = None
+) extends AnalysisException(message, cause, errorClass, messageParameters, sqlState) {
   def this(message: String) = this(message, null, None)
   def this(message: String, cause: Throwable) = this(message, cause, None)
 }

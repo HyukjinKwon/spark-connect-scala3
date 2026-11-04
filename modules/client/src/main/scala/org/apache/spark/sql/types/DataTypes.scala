@@ -73,7 +73,11 @@ abstract class NumericType extends DataType
 /** A type for which the values can be ordered and compared. */
 abstract class AtomicType extends DataType
 
-case object NullType extends DataType { override def defaultSize: Int = 1 }
+case object NullType extends DataType {
+  override def defaultSize: Int = 1
+  // Apache Spark names the NULL type `void` (e.g. in `printSchema` and DDL).
+  override def typeName: String = "void"
+}
 
 case object BooleanType extends AtomicType { override def defaultSize: Int = 1 }
 
@@ -126,6 +130,90 @@ case object TimestampNTZType extends AtomicType {
   override def simpleString: String = "timestamp_ntz"
 }
 
+/**
+ * The TIME type: a time of day without a time zone, with `precision` digits of fractional seconds
+ * (0 to 9). Values are represented as `java.time.LocalTime`. Mirrors
+ * `org.apache.spark.sql.types.TimeType` (Spark 4.1+; the server gates it behind
+ * `spark.sql.timeType.enabled`).
+ */
+case class TimeType(precision: Int) extends AtomicType {
+  if (precision < TimeType.MIN_PRECISION || precision > TimeType.MAX_PRECISION) {
+    throw org.apache.spark.SparkException.withErrorClass(
+      "UNSUPPORTED_TIME_PRECISION",
+      Map("precision" -> precision.toString)
+    )
+  }
+  override def defaultSize: Int = 8
+  override def typeName: String = s"time($precision)"
+}
+
+object TimeType {
+  val MIN_PRECISION: Int = 0
+  val MICROS_PRECISION: Int = 6
+  val NANOS_PRECISION: Int = 9
+  val MAX_PRECISION: Int = NANOS_PRECISION
+  val DEFAULT_PRECISION: Int = MICROS_PRECISION
+
+  def apply(): TimeType = new TimeType(DEFAULT_PRECISION)
+}
+
+/**
+ * A timestamp without time zone with nanosecond-capable precision (7 to 9 fractional-second
+ * digits). Values are represented as `java.time.LocalDateTime`. Mirrors
+ * `org.apache.spark.sql.types.TimestampNTZNanosType` (Spark 4.3+, a preview feature the server
+ * gates behind `spark.sql.timestampNanosTypes.enabled`).
+ */
+case class TimestampNTZNanosType(precision: Int) extends AtomicType {
+  TimestampNanos.validatePrecision(precision, "TIMESTAMP_NTZ")
+  override def defaultSize: Int = 10
+  override def typeName: String = s"timestamp_ntz($precision)"
+}
+
+object TimestampNTZNanosType {
+  val MIN_PRECISION: Int = TimestampNanos.MIN_PRECISION
+  val MAX_PRECISION: Int = TimestampNanos.MAX_PRECISION
+  val NANOS_PRECISION: Int = TimestampNanos.NANOS_PRECISION
+  val DEFAULT_PRECISION: Int = NANOS_PRECISION
+
+  def apply(): TimestampNTZNanosType = new TimestampNTZNanosType(DEFAULT_PRECISION)
+}
+
+/**
+ * A timestamp with local time zone with nanosecond-capable precision (7 to 9 fractional-second
+ * digits). Values are represented as `java.time.Instant`. Mirrors
+ * `org.apache.spark.sql.types.TimestampLTZNanosType` (Spark 4.3+, a preview feature the server
+ * gates behind `spark.sql.timestampNanosTypes.enabled`).
+ */
+case class TimestampLTZNanosType(precision: Int) extends AtomicType {
+  TimestampNanos.validatePrecision(precision, "TIMESTAMP_LTZ")
+  override def defaultSize: Int = 10
+  override def typeName: String = s"timestamp_ltz($precision)"
+}
+
+object TimestampLTZNanosType {
+  val MIN_PRECISION: Int = TimestampNanos.MIN_PRECISION
+  val MAX_PRECISION: Int = TimestampNanos.MAX_PRECISION
+  val NANOS_PRECISION: Int = TimestampNanos.NANOS_PRECISION
+  val DEFAULT_PRECISION: Int = NANOS_PRECISION
+
+  def apply(): TimestampLTZNanosType = new TimestampLTZNanosType(DEFAULT_PRECISION)
+}
+
+/** Shared precision bounds and validation for the nanosecond timestamp types. */
+private[sql] object TimestampNanos {
+  val MIN_PRECISION: Int = 7
+  val MAX_PRECISION: Int = 9
+  val NANOS_PRECISION: Int = 9
+
+  def validatePrecision(precision: Int, typeName: String): Unit =
+    if (precision < MIN_PRECISION || precision > MAX_PRECISION) {
+      throw org.apache.spark.SparkException.withErrorClass(
+        "INVALID_TIMESTAMP_PRECISION",
+        Map("precision" -> precision.toString, "type" -> typeName)
+      )
+    }
+}
+
 case object CalendarIntervalType extends DataType {
   override def defaultSize: Int = 16
   override def simpleString: String = "interval"
@@ -133,18 +221,56 @@ case object CalendarIntervalType extends DataType {
 
 case object VariantType extends AtomicType { override def defaultSize: Int = 2048 }
 
+/**
+ * The GEOMETRY type with spatial reference identifier `srid` (`-1`, rendered as `any`, means a
+ * mixed-SRID column). Values are represented as [[Geometry]]. Mirrors
+ * `org.apache.spark.sql.types.GeometryType` (Spark 4.1+).
+ */
+case class GeometryType(srid: Int) extends AtomicType {
+  override def defaultSize: Int = 2048
+  def isMixedSrid: Boolean = srid == GeometryType.MIXED_SRID
+  override def typeName: String = if (isMixedSrid) "geometry(any)" else s"geometry($srid)"
+}
+
+object GeometryType {
+  val MIXED_SRID: Int = -1
+  val GEOMETRY_DEFAULT_SRID: Int = 4326
+
+  def apply(): GeometryType = new GeometryType(GEOMETRY_DEFAULT_SRID)
+}
+
+/**
+ * The GEOGRAPHY type with spatial reference identifier `srid` (`-1`, rendered as `any`, means a
+ * mixed-SRID column). Values are represented as [[Geography]]. Mirrors
+ * `org.apache.spark.sql.types.GeographyType` (Spark 4.1+).
+ */
+case class GeographyType(srid: Int) extends AtomicType {
+  override def defaultSize: Int = 2048
+  def isMixedSrid: Boolean = srid == GeographyType.MIXED_SRID
+  override def typeName: String = if (isMixedSrid) "geography(any)" else s"geography($srid)"
+}
+
+object GeographyType {
+  val MIXED_SRID: Int = -1
+  val GEOGRAPHY_DEFAULT_SRID: Int = 4326
+
+  def apply(): GeographyType = new GeographyType(GEOGRAPHY_DEFAULT_SRID)
+}
+
 /** A decimal type with the given precision and scale. */
 case class DecimalType(precision: Int, scale: Int) extends NumericType {
   override def defaultSize: Int = if (precision <= 18) 8 else 16
   // typeName (not just simpleString) carries the precision/scale so that treeString /
   // printSchema render `decimal(10,0)` rather than a bare `decimal`, matching Apache Spark.
   override def typeName: String = s"decimal($precision,$scale)"
+  override def sql: String = s"DECIMAL($precision,$scale)"
 }
 
 object DecimalType {
   val MAX_PRECISION = 38
   val MAX_SCALE = 38
   val DEFAULT: DecimalType = DecimalType(10, 0)
+  val USER_DEFAULT: DecimalType = DEFAULT
   val SYSTEM_DEFAULT: DecimalType = DecimalType(MAX_PRECISION, 18)
   def apply(): DecimalType = DEFAULT
 }
@@ -190,6 +316,8 @@ object DayTimeIntervalType {
 case class ArrayType(elementType: DataType, containsNull: Boolean) extends DataType {
   override def defaultSize: Int = 1 * elementType.defaultSize
   override def simpleString: String = s"array<${elementType.simpleString}>"
+  override def catalogString: String = s"array<${elementType.catalogString}>"
+  override def sql: String = s"ARRAY<${elementType.sql}>"
 }
 
 object ArrayType {
@@ -201,6 +329,9 @@ case class MapType(keyType: DataType, valueType: DataType, valueContainsNull: Bo
     extends DataType {
   override def defaultSize: Int = 1 * (keyType.defaultSize + valueType.defaultSize)
   override def simpleString: String = s"map<${keyType.simpleString},${valueType.simpleString}>"
+  override def catalogString: String =
+    s"map<${keyType.catalogString},${valueType.catalogString}>"
+  override def sql: String = s"MAP<${keyType.sql}, ${valueType.sql}>"
 }
 
 object MapType {
@@ -228,12 +359,42 @@ case class StructField(
 
   def getComment: Option[String] =
     if (metadata.contains("comment")) Some(metadata.getString("comment")) else None
+
+  private def nullDDL: String = if (nullable) "" else " NOT NULL"
+
+  private def commentDDL: String =
+    getComment.map(c => s" COMMENT '${StructField.escapeSingleQuoted(c)}'").getOrElse("")
+
+  /** SQL form used inside `STRUCT<...>`, e.g. `id: INT NOT NULL`. */
+  private[sql] def sql: String =
+    s"${StructField.quoteIfNeeded(name)}: ${dataType.sql}$nullDDL$commentDDL"
+
+  /**
+   * Returns this field in DDL format, e.g. `eventId INT NOT NULL`, matching `StructField.toDDL` in
+   * Apache Spark.
+   */
+  def toDDL: String = s"${StructField.quoteIfNeeded(name)} ${dataType.sql}$nullDDL$commentDDL"
+}
+
+object StructField {
+
+  private val validIdent = "[a-zA-Z_][a-zA-Z0-9_]*".r
+
+  /** Quotes an identifier with back-ticks unless it is a plain identifier (as Spark does). */
+  private[sql] def quoteIfNeeded(part: String): String =
+    if (validIdent.matches(part)) part else "`" + part.replace("`", "``") + "`"
+
+  private[sql] def escapeSingleQuoted(s: String): String =
+    s.replace("\\", "\\\\").replace("'", "\\'")
 }
 
 /**
  * A struct type, i.e. the schema of a row.
  */
 case class StructType(fields: Array[StructField]) extends DataType with Iterable[StructField] {
+
+  /** An empty struct, e.g. to build a schema with `new StructType().add("id", LongType)`. */
+  def this() = this(Array.empty[StructField])
 
   override def defaultSize: Int = fields.map(_.dataType.defaultSize).sum
 
@@ -267,6 +428,18 @@ case class StructType(fields: Array[StructField]) extends DataType with Iterable
 
   override def simpleString: String =
     fields.map(_.simpleString).mkString("struct<", ",", ">")
+
+  override def catalogString: String =
+    fields.map(f => s"${f.name}:${f.dataType.catalogString}").mkString("struct<", ",", ">")
+
+  /** SQL form, e.g. `STRUCT<id: BIGINT, name: STRING>`, matching Apache Spark. */
+  override def sql: String = fields.map(_.sql).mkString("STRUCT<", ", ", ">")
+
+  /**
+   * Returns this schema in DDL format, e.g. `eventId INT,s STRING`, which can be used in a table
+   * creation. Matches `StructType.toDDL` in Apache Spark.
+   */
+  def toDDL: String = fields.map(_.toDDL).mkString(",")
 
   /** Returns a tree-formatted string of this schema, used by `Dataset.printSchema`. */
   def treeString: String = {

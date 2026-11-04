@@ -41,6 +41,16 @@ spark.readStream
   .load()
 ```
 
+A source can be named (Spark 4.2+) so that the query keeps a stable checkpoint
+when its sources evolve. You can also stream a table's change feed (Spark 4.2+)
+or read text files as a `Dataset[String]`:
+
+```scala
+spark.readStream.name("events_source").table("events")
+spark.readStream.option("startingVersion", "10").changes("my_table")
+spark.readStream.textFile("/data/incoming-logs")
+```
+
 ## Transforming a stream
 
 Streaming DataFrames support the same transformations as batch DataFrames:
@@ -82,11 +92,12 @@ val query = counts.writeStream
 
 | Mode | Meaning |
 | ---- | ------- |
-| `OutputMode.Append` | Only new rows are written. The default. |
-| `OutputMode.Complete` | The full result table is written every trigger. |
-| `OutputMode.Update` | Only rows that changed are written. |
+| `OutputMode.Append()` | Only new rows are written. The default. |
+| `OutputMode.Complete()` | The full result table is written every trigger. |
+| `OutputMode.Update()` | Only rows that changed are written. |
 
-You can also pass the mode as a string: `outputMode("complete")`.
+Pass either form to `outputMode`: `outputMode(OutputMode.Complete())` or
+`outputMode("complete")`.
 
 ### Triggers
 
@@ -94,7 +105,11 @@ You can also pass the mode as a string: `outputMode("complete")`.
 Trigger.ProcessingTime("5 seconds")  // fire on a fixed interval
 Trigger.AvailableNow()               // process all available data, then stop
 Trigger.Continuous("1 second")       // continuous processing
+Trigger.RealTime("10 seconds")       // real-time mode (Spark 4.2+)
 ```
+
+Each trigger also accepts a `Long` of milliseconds, a `(Long, TimeUnit)`, or a
+`scala.concurrent.duration.Duration`.
 
 ### Sinks
 
@@ -108,9 +123,10 @@ df.writeStream
   .option("checkpointLocation", "/checkpoints/events")
   .start("/data/out")
 
-// A managed table.
+// A managed table, optionally clustered.
 df.writeStream
   .option("checkpointLocation", "/checkpoints/events")
+  .clusterBy("kind")
   .toTable("events_stream")
 ```
 
@@ -126,6 +142,7 @@ query.status            // the current status
 query.lastProgress      // the most recent progress as JSON
 query.awaitTermination()        // block until the query stops
 query.awaitTermination(10000)   // block up to 10s, returns Boolean
+query.sparkSession              // the session that started the query
 query.stop()
 ```
 
@@ -133,7 +150,7 @@ query.stop()
 
 ```scala
 spark.streams.active                 // Array[StreamingQuery]
-spark.streams.get(query.id)          // look a query up by id
+spark.streams.get(query.id)          // look a query up by id (String or UUID)
 spark.streams.awaitAnyTermination()  // block until any query stops
 spark.streams.resetTerminated()
 ```

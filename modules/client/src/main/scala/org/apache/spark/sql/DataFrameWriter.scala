@@ -18,6 +18,7 @@
 package org.apache.spark.sql
 
 import scala.collection.mutable
+import scala.jdk.CollectionConverters._
 
 import org.apache.spark.connect.proto
 
@@ -44,6 +45,8 @@ class DataFrameWriter private[sql] (ds: Dataset[?]) {
   private var sortColumnNames: Seq[String] = Seq.empty
   private var numBuckets: Option[Int] = None
   private var bucketColumnNames: Seq[String] = Seq.empty
+  private var clusteringColumns: Seq[String] = Seq.empty
+  private var withSchemaEvolutionEnabled: Boolean = false
 
   /**
    * Specifies the behavior when data or table already exists. One of `"append"`, `"overwrite"`,
@@ -113,10 +116,14 @@ class DataFrameWriter private[sql] (ds: Dataset[?]) {
    * @return
    *   this writer, for chaining.
    */
-  def options(options: Map[String, String]): DataFrameWriter = {
+  def options(options: scala.collection.Map[String, String]): DataFrameWriter = {
     extraOptions ++= options
     this
   }
+
+  /** (Java-specific) Adds multiple output options. @return this writer, for chaining. */
+  def options(options: java.util.Map[String, String]): DataFrameWriter =
+    this.options(options.asScala)
 
   /**
    * Partitions the output by the given columns on the file system.
@@ -126,6 +133,7 @@ class DataFrameWriter private[sql] (ds: Dataset[?]) {
    */
   def partitionBy(colNames: String*): DataFrameWriter = {
     this.partitioningColumns = colNames
+    validatePartitioning()
     this
   }
 
@@ -139,6 +147,7 @@ class DataFrameWriter private[sql] (ds: Dataset[?]) {
   def bucketBy(numBuckets: Int, colName: String, colNames: String*): DataFrameWriter = {
     this.numBuckets = Option(numBuckets)
     this.bucketColumnNames = colName +: colNames
+    validatePartitioning()
     this
   }
 
@@ -152,6 +161,54 @@ class DataFrameWriter private[sql] (ds: Dataset[?]) {
     this.sortColumnNames = colName +: colNames
     this
   }
+
+  /**
+   * Clusters the output by the given columns, for table formats that support clustering (e.g.
+   * liquid clustering). Cannot be combined with `partitionBy` or `bucketBy`.
+   *
+   * @return
+   *   this writer, for chaining.
+   */
+  def clusterBy(colName: String, colNames: String*): DataFrameWriter = {
+    this.clusteringColumns = colName +: colNames
+    validatePartitioning()
+    this
+  }
+
+  /**
+   * Enables automatic schema evolution for this write (Spark 4.2+). The target table must declare
+   * the `AUTOMATIC_SCHEMA_EVOLUTION` capability.
+   *
+   * @return
+   *   this writer, for chaining.
+   */
+  def withSchemaEvolution(): DataFrameWriter = {
+    this.withSchemaEvolutionEnabled = true
+    this
+  }
+
+  private def isBucketed: Boolean = {
+    if (sortColumnNames.nonEmpty && numBuckets.isEmpty) {
+      throw AnalysisException.withErrorClass("SORT_BY_WITHOUT_BUCKETING", Map.empty)
+    }
+    numBuckets.isDefined
+  }
+
+  private def validatePartitioning(): Unit =
+    if (clusteringColumns.nonEmpty) {
+      if (partitioningColumns.nonEmpty) {
+        throw AnalysisException.withErrorClass(
+          "SPECIFY_CLUSTER_BY_WITH_PARTITIONED_BY_IS_NOT_ALLOWED",
+          Map.empty
+        )
+      }
+      if (isBucketed) {
+        throw AnalysisException.withErrorClass(
+          "SPECIFY_CLUSTER_BY_WITH_BUCKETING_IS_NOT_ALLOWED",
+          Map.empty
+        )
+      }
+    }
 
   /**
    * Saves the [[DataFrame]] as output, for data sources that do not require a path (e.g. external
@@ -196,7 +253,42 @@ class DataFrameWriter private[sql] (ds: Dataset[?]) {
   /** Saves the content as text at the given path. */
   def text(path: String): Unit = format("text").save(path)
 
+  /** Saves the content as XML at the given path. */
+  def xml(path: String): Unit = format("xml").save(path)
+
+  /**
+   * Saves the content to the external database table `table` over JDBC, using `url` and the
+   * connection properties. Partitioning, bucketing, and clustering are not supported here.
+   */
+  def jdbc(url: String, table: String, connectionProperties: java.util.Properties): Unit = {
+    if (partitioningColumns.nonEmpty) {
+      throw AnalysisException.withErrorClass("_LEGACY_ERROR_TEMP_1197", Map("operation" -> "jdbc"))
+    }
+    if (isBucketed) {
+      val errorClass =
+        if (sortColumnNames.isEmpty) "_LEGACY_ERROR_TEMP_1312" else "_LEGACY_ERROR_TEMP_1313"
+      throw AnalysisException.withErrorClass(errorClass, Map("operation" -> "jdbc"))
+    }
+    if (clusteringColumns.nonEmpty) {
+      throw AnalysisException.withErrorClass("CLUSTERING_NOT_SUPPORTED", Map("operation" -> "jdbc"))
+    }
+    // Connection properties override existing options; the url and table override everything.
+    extraOptions ++= connectionProperties.asScala
+    extraOptions ++= Seq("url" -> url, "dbtable" -> table)
+    format("jdbc").save()
+  }
+
   private def executeWriteOperation(f: proto.WriteOperation => proto.WriteOperation): Unit = {
+    val writeOp = buildWriteOperation(f)
+    ds.sparkSession.executeCommand(
+      proto.Command(commandType = proto.Command.CommandType.WriteOperation(writeOp))
+    )
+  }
+
+  /** The `WriteOperation` this writer sends (exposed for offline plan tests). */
+  private[sql] def buildWriteOperation(
+      f: proto.WriteOperation => proto.WriteOperation = identity
+  ): proto.WriteOperation = {
     val bucketBy = numBuckets.map { n =>
       proto.WriteOperation.BucketBy(bucketColumnNames = bucketColumnNames, numBuckets = n)
     }
@@ -207,11 +299,10 @@ class DataFrameWriter private[sql] (ds: Dataset[?]) {
       sortColumnNames = sortColumnNames,
       partitioningColumns = partitioningColumns,
       bucketBy = bucketBy,
-      options = extraOptions.toMap
+      options = extraOptions.toMap,
+      clusteringColumns = clusteringColumns,
+      withSchemaEvolution = withSchemaEvolutionEnabled
     )
-    val writeOp = f(base)
-    ds.sparkSession.executeCommand(
-      proto.Command(commandType = proto.Command.CommandType.WriteOperation(writeOp))
-    )
+    f(base)
   }
 }

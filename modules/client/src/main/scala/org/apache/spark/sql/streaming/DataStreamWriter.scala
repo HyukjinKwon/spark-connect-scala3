@@ -17,7 +17,11 @@
 
 package org.apache.spark.sql.streaming
 
+import java.util.concurrent.TimeUnit
+
 import scala.collection.mutable
+import scala.concurrent.duration.Duration
+import scala.jdk.CollectionConverters._
 
 import org.apache.spark.connect.proto
 import org.apache.spark.sql.Dataset
@@ -53,6 +57,7 @@ class DataStreamWriter private[sql] (ds: Dataset[?]) {
     proto.WriteStreamOperationStart.Trigger.Empty
   private val extraOptions = mutable.Map.empty[String, String]
   private var partitioning: Seq[String] = Seq.empty
+  private var clustering: Seq[String] = Seq.empty
 
   /**
    * Specifies the output mode (`"append"`, `"complete"`, or `"update"`).
@@ -64,6 +69,10 @@ class DataStreamWriter private[sql] (ds: Dataset[?]) {
     this.mode = Option(outputMode)
     this
   }
+
+  /** Specifies how data of a streaming DataFrame is written to the sink. */
+  def outputMode(outputMode: OutputMode): DataStreamWriter =
+    this.outputMode(outputMode.toString.toLowerCase(java.util.Locale.ROOT))
 
   /**
    * Specifies the sink format (e.g. `"console"`, `"memory"`, `"kafka"`).
@@ -102,10 +111,14 @@ class DataStreamWriter private[sql] (ds: Dataset[?]) {
    * @return
    *   this writer, for chaining.
    */
-  def options(options: Map[String, String]): DataStreamWriter = {
+  def options(options: scala.collection.Map[String, String]): DataStreamWriter = {
     extraOptions ++= options
     this
   }
+
+  /** (Java-specific) Adds multiple output options. */
+  def options(options: java.util.Map[String, String]): DataStreamWriter =
+    this.options(options.asScala)
 
   /**
    * Specifies the name of the [[StreamingQuery]] that can be used with
@@ -127,6 +140,12 @@ class DataStreamWriter private[sql] (ds: Dataset[?]) {
    */
   def partitionBy(colNames: String*): DataStreamWriter = {
     this.partitioning = colNames
+    this
+  }
+
+  /** Clusters the output by the given columns, for sinks that support clustering. */
+  def clusterBy(colNames: String*): DataStreamWriter = {
+    this.clustering = colNames
     this
   }
 
@@ -179,6 +198,7 @@ class DataStreamWriter private[sql] (ds: Dataset[?]) {
       format = source.getOrElse(""),
       options = extraOptions.toMap,
       partitioningColumnNames = partitioning,
+      clusteringColumnNames = clustering,
       trigger = trigger,
       outputMode = mode.getOrElse(""),
       queryName = name.getOrElse(""),
@@ -209,51 +229,113 @@ class DataStreamWriter private[sql] (ds: Dataset[?]) {
 }
 
 /**
- * Policy used to indicate how often results should be produced by a [[StreamingQuery]]. Mirrors
- * `org.apache.spark.sql.streaming.Trigger`. Pass an instance to [[DataStreamWriter#trigger]].
+ * A policy for how often a streaming query produces results, set with
+ * `DataStreamWriter.trigger(...)`. Mirrors `org.apache.spark.sql.streaming.Trigger`.
+ *
+ * {{{
+ *   df.writeStream.trigger(Trigger.ProcessingTime("10 seconds"))
+ *   df.writeStream.trigger(Trigger.AvailableNow())
+ *   df.writeStream.trigger(Trigger.RealTime("5 minutes"))
+ * }}}
  */
 sealed trait Trigger {
 
-  /** Converts this trigger to its protobuf representation. */
   private[sql] def toProto: proto.WriteStreamOperationStart.Trigger
 }
 
-/** Factory methods for the supported [[Trigger]] policies. */
 object Trigger {
 
-  /**
-   * A trigger policy that runs a micro-batch query periodically based on the processing time
-   * interval (e.g. `"10 seconds"`).
-   */
-  def ProcessingTime(interval: String): Trigger = new Trigger {
-    private[sql] def toProto: proto.WriteStreamOperationStart.Trigger =
-      proto.WriteStreamOperationStart.Trigger.ProcessingTimeInterval(interval)
+  import proto.WriteStreamOperationStart.{Trigger => T}
+
+  private def trigger(t: T): Trigger = new Trigger {
+    private[sql] def toProto: T = t
   }
 
-  /**
-   * A trigger that processes all available data in a single micro-batch and then stops the query.
-   */
-  @deprecated("Use AvailableNow instead.", "")
-  def Once(): Trigger = new Trigger {
-    private[sql] def toProto: proto.WriteStreamOperationStart.Trigger =
-      proto.WriteStreamOperationStart.Trigger.Once(true)
+  // Durations are sent as "<n> milliseconds", like the Apache Spark Connect client.
+  private def millis(ms: Long, what: String, allowZero: Boolean = true): String = {
+    require(
+      if (allowZero) ms >= 0 else ms > 0,
+      if (allowZero) s"the interval of $what should not be negative"
+      else s"the $what should not be negative"
+    )
+    s"$ms milliseconds"
   }
 
-  /**
-   * A trigger that processes all available data in (possibly) multiple micro-batches and then stops
-   * the query.
-   */
-  def AvailableNow(): Trigger = new Trigger {
-    private[sql] def toProto: proto.WriteStreamOperationStart.Trigger =
-      proto.WriteStreamOperationStart.Trigger.AvailableNow(true)
-  }
+  /** Runs a micro-batch every `interval` of processing time (e.g. `"10 seconds"`). */
+  def ProcessingTime(interval: String): Trigger = trigger(T.ProcessingTimeInterval(interval))
+
+  /** Runs a micro-batch every `intervalMs` milliseconds of processing time. */
+  def ProcessingTime(intervalMs: Long): Trigger =
+    trigger(T.ProcessingTimeInterval(millis(intervalMs, "trigger")))
+
+  /** Runs a micro-batch every `interval` (in `timeUnit`) of processing time. */
+  def ProcessingTime(interval: Long, timeUnit: TimeUnit): Trigger =
+    ProcessingTime(timeUnit.toMillis(interval))
+
+  /** Runs a micro-batch every `interval` of processing time. */
+  def ProcessingTime(interval: Duration): Trigger = ProcessingTime(interval.toMillis)
+
+  /** Processes all available data in one micro-batch, then stops. */
+  @deprecated("Use AvailableNow instead.", "3.4.0")
+  def Once(): Trigger = trigger(T.Once(true))
+
+  /** Processes all available data, possibly in multiple micro-batches, then stops. */
+  def AvailableNow(): Trigger = trigger(T.AvailableNow(true))
+
+  /** Continuous processing with the given checkpoint interval (e.g. `"1 second"`). */
+  def Continuous(interval: String): Trigger = trigger(T.ContinuousCheckpointInterval(interval))
+
+  /** Continuous processing with the given checkpoint interval in milliseconds. */
+  def Continuous(intervalMs: Long): Trigger =
+    trigger(T.ContinuousCheckpointInterval(millis(intervalMs, "trigger")))
+
+  /** Continuous processing with the given checkpoint interval (in `timeUnit`). */
+  def Continuous(interval: Long, timeUnit: TimeUnit): Trigger =
+    Continuous(timeUnit.toMillis(interval))
+
+  /** Continuous processing with the given checkpoint interval. */
+  def Continuous(interval: Duration): Trigger = Continuous(interval.toMillis)
 
   /**
-   * A trigger that runs a continuous query, checkpointing at the given interval (e.g. `"1
-   * second"`).
+   * Real-time mode (Spark 4.2+) with batches of the given duration (e.g. `"10 seconds"`): records
+   * are processed as they arrive, for sources and sinks that support it.
    */
-  def Continuous(interval: String): Trigger = new Trigger {
-    private[sql] def toProto: proto.WriteStreamOperationStart.Trigger =
-      proto.WriteStreamOperationStart.Trigger.ContinuousCheckpointInterval(interval)
-  }
+  def RealTime(batchDuration: String): Trigger = trigger(T.RealTimeBatchDuration(batchDuration))
+
+  /** Real-time mode with batches of `batchDurationMs` milliseconds. */
+  def RealTime(batchDurationMs: Long): Trigger =
+    trigger(T.RealTimeBatchDuration(millis(batchDurationMs, "batch duration", allowZero = false)))
+
+  /** Real-time mode with batches of the given duration (in `timeUnit`). */
+  def RealTime(batchDuration: Long, timeUnit: TimeUnit): Trigger =
+    RealTime(timeUnit.toMillis(batchDuration))
+
+  /** Real-time mode with batches of the given duration. */
+  def RealTime(batchDuration: Duration): Trigger = RealTime(batchDuration.toMillis)
+
+  /** Real-time mode with the default batch duration of 5 minutes. */
+  def RealTime(): Trigger = RealTime(5L, TimeUnit.MINUTES)
+}
+
+/**
+ * How the rows of a streaming DataFrame are written to the sink. Mirrors
+ * `org.apache.spark.sql.streaming.OutputMode`.
+ */
+sealed abstract class OutputMode private (name: String) {
+  override def toString: String = name
+}
+
+object OutputMode {
+  private case object AppendMode extends OutputMode("Append")
+  private case object CompleteMode extends OutputMode("Complete")
+  private case object UpdateMode extends OutputMode("Update")
+
+  /** Only new rows are written to the sink. */
+  def Append(): OutputMode = AppendMode
+
+  /** All rows are written to the sink every time there are updates. */
+  def Complete(): OutputMode = CompleteMode
+
+  /** Only rows that were updated are written to the sink every time there are updates. */
+  def Update(): OutputMode = UpdateMode
 }

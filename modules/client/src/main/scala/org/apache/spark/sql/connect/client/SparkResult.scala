@@ -19,7 +19,7 @@ package org.apache.spark.sql.connect.client
 
 import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
-import java.time.{Instant, LocalDate, LocalDateTime, ZoneOffset}
+import java.time.{Instant, LocalDate, LocalDateTime, LocalTime, ZoneOffset}
 
 import scala.collection.mutable
 
@@ -37,7 +37,7 @@ import org.apache.spark.sql.types.{StringType, StructField, StructType}
 /**
  * Materializes the streaming `ExecutePlanResponse`s of a query into a sequence of [[Row]]s by
  * decoding the embedded Arrow IPC batches. The result is computed lazily on first access and
- * cached.
+ * cached. (Observed metrics are handed to their `Observation`s by the session.)
  */
 private[sql] class SparkResult(
     responses: Iterator[proto.ExecutePlanResponse],
@@ -60,14 +60,6 @@ private[sql] class SparkResult(
       }
       response.responseType.arrowBatch.foreach { batch =>
         readArrowBatch(batch.data.toByteArray)
-      }
-      response.observedMetrics.foreach { om =>
-        org.apache.spark.sql.Observation.lookup(om.name).foreach { obs =>
-          obs.setMetricsFromLiterals(
-            om.values.map(org.apache.spark.sql.Observation.decodeLiteral),
-            om.keys
-          )
-        }
       }
     }
     processed = true
@@ -149,11 +141,22 @@ private[sql] object SparkResult {
       case v: DateDayVector => LocalDate.ofEpochDay(v.get(i).toLong)
       case v: TimeStampMicroTZVector => microsToInstant(v.get(i))
       case v: TimeStampMicroVector => microsToLocalDateTime(v.get(i))
+      // Nanosecond timestamps (TIMESTAMP_LTZ(p) / TIMESTAMP_NTZ(p), p in 7..9).
+      case v: TimeStampNanoTZVector => nanosToInstant(v.get(i))
+      case v: TimeStampNanoVector =>
+        LocalDateTime.ofInstant(nanosToInstant(v.get(i)), ZoneOffset.UTC)
+      // TIME(p) is carried as nanoseconds of the day.
+      case v: TimeNanoVector => LocalTime.ofNanoOfDay(v.get(i))
+      case v: TimeMicroVector => LocalTime.ofNanoOfDay(v.get(i) * 1000L)
       case v: DurationVector => v.getObject(i)
       case v: NullVector => null
       // MapVector extends ListVector, so it must be matched first.
       case v: MapVector => mapValue(v, i)
       case v: ListVector => listValue(v, i)
+      case v: StructVector if isGeospatial(v, "geometry") =>
+        org.apache.spark.sql.types.Geometry.fromWKB(geoBytes(v, i), geoSrid(v, i))
+      case v: StructVector if isGeospatial(v, "geography") =>
+        org.apache.spark.sql.types.Geography.fromWKB(geoBytes(v, i), geoSrid(v, i))
       case v: StructVector => structValue(v, i)
       case other => normalize(other.getObject(i))
     }
@@ -168,6 +171,36 @@ private[sql] object SparkResult {
     val microsOfSecond = Math.floorMod(micros, MICROS_PER_SECOND)
     Instant.ofEpochSecond(seconds, microsOfSecond * 1000)
   }
+
+  private val NANOS_PER_SECOND = 1000000000L
+
+  private def nanosToInstant(nanos: Long): Instant =
+    Instant.ofEpochSecond(
+      Math.floorDiv(nanos, NANOS_PER_SECOND),
+      Math.floorMod(nanos, NANOS_PER_SECOND)
+    )
+
+  /**
+   * GEOMETRY / GEOGRAPHY columns arrive as a struct of (`srid`, `wkb`) whose `wkb` child is tagged
+   * with `geometry=true` / `geography=true` field metadata (see Apache Spark's `ArrowUtils`).
+   */
+  private def isGeospatial(vector: StructVector, kind: String): Boolean = {
+    val wkb = vector.getChild("wkb")
+    wkb != null && {
+      val md = wkb.getField.getMetadata
+      md != null && "true" == md.get(kind)
+    }
+  }
+
+  private def geoBytes(vector: StructVector, i: Int): Array[Byte] =
+    vector.getChild("wkb") match {
+      case b: VarBinaryVector => b.get(i)
+      case b: LargeVarBinaryVector => b.get(i)
+      case other => other.getObject(i).asInstanceOf[Array[Byte]]
+    }
+
+  private def geoSrid(vector: StructVector, i: Int): Int =
+    vector.getChild("srid").asInstanceOf[IntVector].get(i)
 
   private def microsToLocalDateTime(micros: Long): LocalDateTime =
     LocalDateTime.ofInstant(microsToInstant(micros), ZoneOffset.UTC)

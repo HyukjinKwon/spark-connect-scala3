@@ -19,17 +19,21 @@ package org.apache.spark.sql
 
 import scala.jdk.CollectionConverters._
 
+import org.apache.spark.SparkException
 import org.apache.spark.connect.proto
 import org.apache.spark.connect.proto.Relation.RelType
 import org.apache.spark.sql.connect.common.DataTypeProtoConverter
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{Metadata, StructType}
+import org.apache.spark.storage.StorageLevel
 
 /**
  * A distributed collection of rows. A [[Dataset]] is lazy: transformations build up a protobuf
  * logical plan, and nothing executes until an action (e.g. [[collect]], [[show]], [[count]]) is
  * called.
  *
- * Mirrors the public surface of `org.apache.spark.sql.Dataset` over the Spark Connect protocol.
+ * Mirrors the public surface of `org.apache.spark.sql.Dataset` over the Spark Connect protocol:
+ * operations that keep the row type (filtering, sorting, set operations, repartitioning, ...)
+ * return a `Dataset[T]`, while operations that change the schema return a [[DataFrame]].
  */
 class Dataset[T] private[sql] (
     val sparkSession: SparkSession,
@@ -52,12 +56,28 @@ class Dataset[T] private[sql] (
    */
   def plan: proto.Plan = proto.Plan(proto.Plan.OpType.Root(relation))
 
+  /** The id the server uses to refer to this Dataset's plan. */
+  private[sql] def planId: Option[Long] = relation.common.flatMap(_.planId)
+
   /** Builds a new DataFrame whose relation has `this` as input. */
-  private def withInput(relType: RelType): DataFrame = sparkSession.newDataFrame(relType)
+  private def withInput(relType: RelType, cols: Seq[Column] = Nil): DataFrame =
+    sparkSession.newDataFrame(relType, cols)
 
   /** Builds a new Dataset of the same element type `T` from a relation built on this input. */
-  private def withSameType(relType: RelType): Dataset[T] =
-    new Dataset(sparkSession, sparkSession.newRelation(relType), encoder)
+  private def withSameType(relType: RelType, cols: Seq[Column] = Nil): Dataset[T] =
+    sparkSession.newDataset(relType, encoder, cols)
+
+  private def checkSameSparkSession(other: Dataset[?]): Unit =
+    if (sparkSession.sessionId != other.sparkSession.sessionId) {
+      throw new SparkException(
+        "[CONNECT.SESSION_NOT_SAME] Generic Spark Connect error. Both Datasets must belong to " +
+          "the same SparkSession. SQLSTATE: 56K00",
+        null,
+        Some("CONNECT.SESSION_NOT_SAME"),
+        Map.empty,
+        Some("56K00")
+      )
+    }
 
   /**
    * Returns a new Dataset where each record is mapped to type `U` via its [[Encoder]]. This is a
@@ -88,12 +108,19 @@ class Dataset[T] private[sql] (
    * Selects a column by name, qualified by this Dataset's plan id so that it resolves unambiguously
    * even in self-joins.
    */
-  def col(colName: String): Column = {
-    val planId = relation.common.flatMap(_.planId)
+  def col(colName: String): Column =
     if (colName == "*") {
       Column(
         proto.Expression(exprType =
           proto.Expression.ExprType.UnresolvedStar(proto.Expression.UnresolvedStar(planId = planId))
+        )
+      )
+    } else if (colName.endsWith(".*")) {
+      Column(
+        proto.Expression(exprType =
+          proto.Expression.ExprType.UnresolvedStar(
+            proto.Expression.UnresolvedStar(unparsedTarget = Some(colName), planId = planId)
+          )
         )
       )
     } else {
@@ -105,14 +132,29 @@ class Dataset[T] private[sql] (
         )
       )
     }
-  }
 
   /** Selects a column by name. Alias for [[col]]. */
   def apply(colName: String): Column = col(colName)
 
+  /**
+   * Selects a metadata column (such as `_metadata` of file sources) by name, qualified by this
+   * Dataset's plan id.
+   */
+  def metadataColumn(colName: String): Column =
+    Column(
+      proto.Expression(exprType =
+        proto.Expression.ExprType.UnresolvedAttribute(
+          proto.Expression.UnresolvedAttribute(
+            unparsedIdentifier = colName,
+            planId = planId,
+            isMetadataColumn = Some(true)
+          )
+        )
+      )
+    )
+
   /** Selects columns based on a column name regular expression. */
-  def colRegex(colName: String): Column = {
-    val planId = relation.common.flatMap(_.planId)
+  def colRegex(colName: String): Column =
     Column(
       proto.Expression(exprType =
         proto.Expression.ExprType.UnresolvedRegex(
@@ -120,192 +162,429 @@ class Dataset[T] private[sql] (
         )
       )
     )
-  }
+
+  // -- Subqueries ------------------------------------------------------------
+
+  /**
+   * Returns a [[Column]] for this single-column, single-row Dataset as a scalar subquery, e.g.
+   * `df.where(col("v") > spark.table("t").select(max("v")).scalar())`.
+   */
+  def scalar(): Column = subquery(proto.SubqueryExpression.SubqueryType.SUBQUERY_TYPE_SCALAR)
+
+  /** Returns a [[Column]] that is true if this Dataset has any rows (an EXISTS subquery). */
+  def exists(): Column = subquery(proto.SubqueryExpression.SubqueryType.SUBQUERY_TYPE_EXISTS)
+
+  private def subquery(subqueryType: proto.SubqueryExpression.SubqueryType): Column =
+    new Column(
+      proto.Expression(exprType =
+        proto.Expression.ExprType.SubqueryExpression(
+          proto.SubqueryExpression(planId = Column.planIdOf(relation), subqueryType = subqueryType)
+        )
+      ),
+      Seq(relation)
+    )
 
   // -- Projection / filtering ------------------------------------------------
 
   def select(cols: Column*): DataFrame =
     withInput(
-      RelType.Project(proto.Project(input = Some(relation), expressions = cols.map(_.expr)))
+      RelType.Project(proto.Project(input = Some(relation), expressions = cols.map(_.expr))),
+      cols
     )
 
   def select(col: String, cols: String*): DataFrame =
     select((col +: cols).map(Column.fromName)*)
 
+  /** Selects one typed column, returning a `Dataset` of its values. */
+  def select[U1](c1: TypedColumn[T, U1]): Dataset[U1] =
+    selectTyped(Seq(c1), Encoder.columnValue(c1.encoder))
+
+  /** Selects two typed columns, returning a `Dataset` of tuples. */
+  def select[U1, U2](c1: TypedColumn[T, U1], c2: TypedColumn[T, U2]): Dataset[(U1, U2)] =
+    selectTyped(Seq(c1, c2), Encoder.tuple[(U1, U2)](Seq(c1.encoder, c2.encoder)))
+
+  /** Selects three typed columns, returning a `Dataset` of tuples. */
+  def select[U1, U2, U3](
+      c1: TypedColumn[T, U1],
+      c2: TypedColumn[T, U2],
+      c3: TypedColumn[T, U3]
+  ): Dataset[(U1, U2, U3)] =
+    selectTyped(
+      Seq(c1, c2, c3),
+      Encoder.tuple[(U1, U2, U3)](Seq(c1.encoder, c2.encoder, c3.encoder))
+    )
+
+  /** Selects four typed columns, returning a `Dataset` of tuples. */
+  def select[U1, U2, U3, U4](
+      c1: TypedColumn[T, U1],
+      c2: TypedColumn[T, U2],
+      c3: TypedColumn[T, U3],
+      c4: TypedColumn[T, U4]
+  ): Dataset[(U1, U2, U3, U4)] =
+    selectTyped(
+      Seq(c1, c2, c3, c4),
+      Encoder.tuple[(U1, U2, U3, U4)](Seq(c1.encoder, c2.encoder, c3.encoder, c4.encoder))
+    )
+
+  /** Selects five typed columns, returning a `Dataset` of tuples. */
+  def select[U1, U2, U3, U4, U5](
+      c1: TypedColumn[T, U1],
+      c2: TypedColumn[T, U2],
+      c3: TypedColumn[T, U3],
+      c4: TypedColumn[T, U4],
+      c5: TypedColumn[T, U5]
+  ): Dataset[(U1, U2, U3, U4, U5)] =
+    selectTyped(
+      Seq(c1, c2, c3, c4, c5),
+      Encoder.tuple[(U1, U2, U3, U4, U5)](
+        Seq(c1.encoder, c2.encoder, c3.encoder, c4.encoder, c5.encoder)
+      )
+    )
+
+  private def selectTyped[U](cols: Seq[Column], enc: Encoder[U]): Dataset[U] =
+    sparkSession.newDataset(
+      RelType.Project(proto.Project(input = Some(relation), expressions = cols.map(_.expr))),
+      enc,
+      cols
+    )
+
   def selectExpr(exprs: String*): DataFrame =
     select(exprs.map(Dataset.exprColumn)*)
 
-  def filter(condition: Column): DataFrame =
-    withInput(
-      RelType.Filter(proto.Filter(input = Some(relation), condition = Some(condition.expr)))
+  def filter(condition: Column): Dataset[T] =
+    withSameType(
+      RelType.Filter(proto.Filter(input = Some(relation), condition = Some(condition.expr))),
+      Seq(condition)
     )
 
-  def filter(conditionExpr: String): DataFrame = filter(Dataset.exprColumn(conditionExpr))
-  def where(condition: Column): DataFrame = filter(condition)
-  def where(conditionExpr: String): DataFrame = filter(conditionExpr)
+  def filter(conditionExpr: String): Dataset[T] = filter(Dataset.exprColumn(conditionExpr))
+  def where(condition: Column): Dataset[T] = filter(condition)
+  def where(conditionExpr: String): Dataset[T] = filter(conditionExpr)
 
-  def withColumn(colName: String, col: Column): DataFrame =
+  def withColumn(colName: String, col: Column): DataFrame = withColumns(Seq(colName), Seq(col))
+
+  /** Adds or replaces several columns at once. */
+  def withColumns(colsMap: Map[String, Column]): DataFrame = {
+    val (names, cols) = colsMap.toSeq.unzip
+    withColumns(names, cols)
+  }
+
+  /** (Java-specific) Adds or replaces several columns at once. */
+  def withColumns(colsMap: java.util.Map[String, Column]): DataFrame =
+    withColumns(colsMap.asScala.toMap)
+
+  private def withColumns(colNames: Seq[String], cols: Seq[Column]): DataFrame = {
+    require(
+      colNames.size == cols.size,
+      s"The size of column names: ${colNames.size} isn't equal to " +
+        s"the size of columns: ${cols.size}"
+    )
     withInput(
       RelType.WithColumns(
         proto.WithColumns(
           input = Some(relation),
-          aliases = Seq(proto.Expression.Alias(expr = Some(col.expr), name = Seq(colName)))
+          aliases = colNames.zip(cols).map { case (name, c) =>
+            proto.Expression.Alias(expr = Some(c.expr), name = Seq(name))
+          }
         )
-      )
+      ),
+      cols
     )
+  }
 
   def withColumnRenamed(existingName: String, newName: String): DataFrame =
-    withInput(
-      RelType.WithColumnsRenamed(
-        proto.WithColumnsRenamed(
-          input = Some(relation),
-          renames =
-            Seq(proto.WithColumnsRenamed.Rename(colName = existingName, newColName = newName))
-        )
-      )
-    )
+    withColumnsRenamed(Seq(existingName), Seq(newName))
 
-  def withColumnsRenamed(renames: Map[String, String]): DataFrame =
+  def withColumnsRenamed(colsMap: Map[String, String]): DataFrame = {
+    val (names, newNames) = colsMap.toSeq.unzip
+    withColumnsRenamed(names, newNames)
+  }
+
+  /** (Java-specific) Renames several columns at once. */
+  def withColumnsRenamed(colsMap: java.util.Map[String, String]): DataFrame =
+    withColumnsRenamed(colsMap.asScala.toMap)
+
+  private def withColumnsRenamed(colNames: Seq[String], newColNames: Seq[String]): DataFrame =
     withInput(
       RelType.WithColumnsRenamed(
         proto.WithColumnsRenamed(
           input = Some(relation),
-          renames = renames.toSeq.map { case (k, v) =>
+          renames = colNames.zip(newColNames).map { case (k, v) =>
             proto.WithColumnsRenamed.Rename(colName = k, newColName = v)
           }
         )
       )
     )
 
+  /** Returns a new Dataset where the metadata of column `columnName` is replaced by `metadata`. */
+  def withMetadata(columnName: String, metadata: Metadata): DataFrame =
+    withInput(
+      RelType.WithColumns(
+        proto.WithColumns(
+          input = Some(relation),
+          aliases = Seq(
+            proto.Expression.Alias(
+              expr = Some(col(columnName).expr),
+              name = Seq(columnName),
+              metadata = Some(metadata.json)
+            )
+          )
+        )
+      )
+    )
+
+  def drop(colName: String): DataFrame = drop(Seq(colName)*)
+
   def drop(colNames: String*): DataFrame =
     withInput(RelType.Drop(proto.Drop(input = Some(relation), columnNames = colNames)))
 
-  def drop(col: Column): DataFrame =
-    withInput(RelType.Drop(proto.Drop(input = Some(relation), columns = Seq(col.expr))))
+  def drop(col: Column): DataFrame = drop(col, Seq.empty*)
+
+  def drop(col: Column, cols: Column*): DataFrame =
+    withInput(
+      RelType.Drop(proto.Drop(input = Some(relation), columns = (col +: cols).map(_.expr))),
+      col +: cols
+    )
 
   def toDF(): DataFrame = new Dataset(sparkSession, relation, Encoder.rowEncoder)
   def toDF(colNames: String*): DataFrame =
     withInput(RelType.ToDf(proto.ToDF(input = Some(relation), columnNames = colNames)))
 
-  def as(alias: String): DataFrame =
-    withInput(RelType.SubqueryAlias(proto.SubqueryAlias(input = Some(relation), alias = alias)))
-  def alias(alias: String): DataFrame = as(alias)
-
-  def hint(name: String, parameters: Any*): DataFrame =
-    withInput(
-      RelType.Hint(
-        proto.Hint(
-          input = Some(relation),
-          name = name,
-          parameters = parameters.map(p => Column.lit(p).expr)
-        )
-      )
+  def as(alias: String): Dataset[T] =
+    withSameType(
+      RelType.SubqueryAlias(proto.SubqueryAlias(input = Some(relation), alias = alias))
     )
+  def as(alias: Symbol): Dataset[T] = as(alias.name)
+  def alias(alias: String): Dataset[T] = as(alias)
+  def alias(alias: Symbol): Dataset[T] = as(alias)
+
+  def hint(name: String, parameters: Any*): Dataset[T] = {
+    val params = parameters.map(Column.lit)
+    withSameType(
+      RelType.Hint(
+        proto.Hint(input = Some(relation), name = name, parameters = params.map(_.expr))
+      ),
+      params
+    )
+  }
+
+  /**
+   * Appends a column of consecutive 0-based `Long` indices named `index`, similar to
+   * `RDD.zipWithIndex()`. The index column is the last column of the result.
+   */
+  def zipWithIndex(): DataFrame = zipWithIndex("index")
+
+  /**
+   * Appends a column of consecutive 0-based `Long` indices named `indexColName`, similar to
+   * `RDD.zipWithIndex()`. If a column with that name already exists, the result has duplicate
+   * column names.
+   */
+  def zipWithIndex(indexColName: String): DataFrame =
+    select(col("*"), Column.internalFn("distributed_sequence_id").alias(indexColName))
 
   // -- Ordering & limiting ---------------------------------------------------
 
-  def limit(n: Int): DataFrame =
-    withInput(RelType.Limit(proto.Limit(input = Some(relation), limit = n)))
+  def limit(n: Int): Dataset[T] =
+    withSameType(RelType.Limit(proto.Limit(input = Some(relation), limit = n)))
 
-  def offset(n: Int): DataFrame =
-    withInput(RelType.Offset(proto.Offset(input = Some(relation), offset = n)))
+  def offset(n: Int): Dataset[T] =
+    withSameType(RelType.Offset(proto.Offset(input = Some(relation), offset = n)))
 
-  def sort(sortCol: String, sortCols: String*): DataFrame =
+  def sort(sortCol: String, sortCols: String*): Dataset[T] =
     sort((sortCol +: sortCols).map(Column.fromName)*)
 
-  def sort(sortExprs: Column*): DataFrame = buildSort(sortExprs, global = true)
-  def orderBy(sortCol: String, sortCols: String*): DataFrame = sort(sortCol, sortCols*)
-  def orderBy(sortExprs: Column*): DataFrame = sort(sortExprs*)
-  def sortWithinPartitions(sortExprs: Column*): DataFrame = buildSort(sortExprs, global = false)
-  def sortWithinPartitions(sortCol: String, sortCols: String*): DataFrame =
+  def sort(sortExprs: Column*): Dataset[T] = buildSort(sortExprs, global = true)
+  def orderBy(sortCol: String, sortCols: String*): Dataset[T] = sort(sortCol, sortCols*)
+  def orderBy(sortExprs: Column*): Dataset[T] = sort(sortExprs*)
+  def sortWithinPartitions(sortExprs: Column*): Dataset[T] = buildSort(sortExprs, global = false)
+  def sortWithinPartitions(sortCol: String, sortCols: String*): Dataset[T] =
     buildSort((sortCol +: sortCols).map(Column.fromName), global = false)
 
-  private def buildSort(sortExprs: Seq[Column], global: Boolean): DataFrame =
-    withInput(
+  private def buildSort(sortExprs: Seq[Column], global: Boolean): Dataset[T] =
+    withSameType(
       RelType.Sort(
         proto.Sort(
           input = Some(relation),
           order = sortExprs.map(Dataset.toSortOrder),
           isGlobal = Some(global)
         )
-      )
+      ),
+      sortExprs
     )
 
   // -- Distinct --------------------------------------------------------------
 
-  def distinct(): DataFrame =
-    withInput(
+  def distinct(): Dataset[T] = dropDuplicates()
+
+  def dropDuplicates(): Dataset[T] =
+    withSameType(
       RelType.Deduplicate(proto.Deduplicate(input = Some(relation), allColumnsAsKeys = Some(true)))
     )
-
-  def dropDuplicates(): DataFrame = distinct()
-  def dropDuplicates(colNames: Seq[String]): DataFrame =
-    withInput(
+  def dropDuplicates(colNames: Seq[String]): Dataset[T] =
+    withSameType(
       RelType.Deduplicate(proto.Deduplicate(input = Some(relation), columnNames = colNames))
     )
-  def dropDuplicates(col1: String, cols: String*): DataFrame = dropDuplicates(col1 +: cols)
+  def dropDuplicates(colNames: Array[String]): Dataset[T] = dropDuplicates(colNames.toSeq)
+  def dropDuplicates(col1: String, cols: String*): Dataset[T] = dropDuplicates(col1 +: cols)
 
-  // -- Set operations --------------------------------------------------------
-
-  def union(other: Dataset[?]): DataFrame = setOp(other, union = true, isAll = true)
-  def unionAll(other: Dataset[?]): DataFrame = union(other)
-  def unionByName(other: Dataset[?]): DataFrame = unionByName(other, allowMissingColumns = false)
-  def unionByName(other: Dataset[?], allowMissingColumns: Boolean): DataFrame =
-    withInput(
-      RelType.SetOp(
-        proto.SetOperation(
-          leftInput = Some(relation),
-          rightInput = Some(other.relation),
-          setOpType = proto.SetOperation.SetOpType.SET_OP_TYPE_UNION,
-          isAll = Some(true),
-          byName = Some(true),
-          allowMissingColumns = Some(allowMissingColumns)
+  /** Drops duplicates within the event-time watermark, keeping state bounded for streaming. */
+  def dropDuplicatesWithinWatermark(): Dataset[T] =
+    withSameType(
+      RelType.Deduplicate(
+        proto.Deduplicate(
+          input = Some(relation),
+          allColumnsAsKeys = Some(true),
+          withinWatermark = Some(true)
         )
       )
     )
 
-  def intersect(other: Dataset[?]): DataFrame =
-    setOpTyped(other, proto.SetOperation.SetOpType.SET_OP_TYPE_INTERSECT, isAll = false)
-  def intersectAll(other: Dataset[?]): DataFrame =
-    setOpTyped(other, proto.SetOperation.SetOpType.SET_OP_TYPE_INTERSECT, isAll = true)
-  def except(other: Dataset[?]): DataFrame =
-    setOpTyped(other, proto.SetOperation.SetOpType.SET_OP_TYPE_EXCEPT, isAll = false)
-  def exceptAll(other: Dataset[?]): DataFrame =
-    setOpTyped(other, proto.SetOperation.SetOpType.SET_OP_TYPE_EXCEPT, isAll = true)
+  def dropDuplicatesWithinWatermark(colNames: Seq[String]): Dataset[T] =
+    withSameType(
+      RelType.Deduplicate(
+        proto.Deduplicate(
+          input = Some(relation),
+          columnNames = colNames,
+          withinWatermark = Some(true)
+        )
+      )
+    )
 
-  private def setOp(other: Dataset[?], union: Boolean, isAll: Boolean): DataFrame =
-    setOpTyped(other, proto.SetOperation.SetOpType.SET_OP_TYPE_UNION, isAll)
+  def dropDuplicatesWithinWatermark(colNames: Array[String]): Dataset[T] =
+    dropDuplicatesWithinWatermark(colNames.toSeq)
 
-  private def setOpTyped(
-      other: Dataset[?],
+  def dropDuplicatesWithinWatermark(col1: String, cols: String*): Dataset[T] =
+    dropDuplicatesWithinWatermark(col1 +: cols)
+
+  // -- Set operations --------------------------------------------------------
+
+  def union(other: Dataset[T]): Dataset[T] =
+    setOp(other, proto.SetOperation.SetOpType.SET_OP_TYPE_UNION, isAll = true)
+  def unionAll(other: Dataset[T]): Dataset[T] = union(other)
+  def unionByName(other: Dataset[T]): Dataset[T] = unionByName(other, allowMissingColumns = false)
+  def unionByName(other: Dataset[T], allowMissingColumns: Boolean): Dataset[T] =
+    setOp(
+      other,
+      proto.SetOperation.SetOpType.SET_OP_TYPE_UNION,
+      isAll = true,
+      byName = true,
+      allowMissingColumns = Some(allowMissingColumns)
+    )
+
+  def intersect(other: Dataset[T]): Dataset[T] =
+    setOp(other, proto.SetOperation.SetOpType.SET_OP_TYPE_INTERSECT, isAll = false)
+  def intersectAll(other: Dataset[T]): Dataset[T] =
+    setOp(other, proto.SetOperation.SetOpType.SET_OP_TYPE_INTERSECT, isAll = true)
+  def except(other: Dataset[T]): Dataset[T] =
+    setOp(other, proto.SetOperation.SetOpType.SET_OP_TYPE_EXCEPT, isAll = false)
+  def exceptAll(other: Dataset[T]): Dataset[T] =
+    setOp(other, proto.SetOperation.SetOpType.SET_OP_TYPE_EXCEPT, isAll = true)
+
+  private def setOp(
+      other: Dataset[T],
       opType: proto.SetOperation.SetOpType,
-      isAll: Boolean
-  ): DataFrame =
-    withInput(
+      isAll: Boolean,
+      byName: Boolean = false,
+      allowMissingColumns: Option[Boolean] = None
+  ): Dataset[T] = {
+    checkSameSparkSession(other)
+    withSameType(
       RelType.SetOp(
         proto.SetOperation(
           leftInput = Some(relation),
           rightInput = Some(other.relation),
           setOpType = opType,
-          isAll = Some(isAll)
+          isAll = Some(isAll),
+          byName = if (byName) Some(true) else None,
+          allowMissingColumns = allowMissingColumns
         )
       )
     )
+  }
 
   // -- Joins -----------------------------------------------------------------
 
   def join(right: Dataset[?]): DataFrame = buildJoin(right, None, Nil, "inner")
-  def join(right: Dataset[?], usingColumn: String): DataFrame =
-    buildJoin(right, None, Seq(usingColumn), "inner")
+  def join(right: Dataset[?], usingColumn: String): DataFrame = join(right, Seq(usingColumn))
+  def join(right: Dataset[?], usingColumns: Array[String]): DataFrame =
+    join(right, usingColumns.toSeq)
   def join(right: Dataset[?], usingColumns: Seq[String]): DataFrame =
-    buildJoin(right, None, usingColumns, "inner")
+    join(right, usingColumns, "inner")
+  def join(right: Dataset[?], usingColumn: String, joinType: String): DataFrame =
+    join(right, Seq(usingColumn), joinType)
+  def join(right: Dataset[?], usingColumns: Array[String], joinType: String): DataFrame =
+    join(right, usingColumns.toSeq, joinType)
   def join(right: Dataset[?], usingColumns: Seq[String], joinType: String): DataFrame =
     buildJoin(right, None, usingColumns, joinType)
-  def join(right: Dataset[?], joinExprs: Column): DataFrame =
-    buildJoin(right, Some(joinExprs), Nil, "inner")
+  def join(right: Dataset[?], joinExprs: Column): DataFrame = join(right, joinExprs, "inner")
   def join(right: Dataset[?], joinExprs: Column, joinType: String): DataFrame =
     buildJoin(right, Some(joinExprs), Nil, joinType)
   def crossJoin(right: Dataset[?]): DataFrame = buildJoin(right, None, Nil, "cross")
+
+  private def buildJoin(
+      right: Dataset[?],
+      joinExprs: Option[Column],
+      usingColumns: Seq[String],
+      joinType: String
+  ): DataFrame = {
+    checkSameSparkSession(right)
+    withInput(
+      RelType.Join(
+        proto.Join(
+          left = Some(relation),
+          right = Some(right.relation),
+          joinCondition = joinExprs.map(_.expr),
+          joinType = Dataset.toJoinType(joinType),
+          usingColumns = usingColumns
+        )
+      ),
+      joinExprs.toSeq
+    )
+  }
+
+  /**
+   * Joins with `other` (an inner join), returning each matching pair of records as a tuple. Like
+   * Apache Spark, a struct-typed (case class) side becomes a nested struct column.
+   */
+  def joinWith[U](other: Dataset[U], condition: Column): Dataset[(T, U)] =
+    joinWith(other, condition, "inner")
+
+  /**
+   * Joins with `other` using the given join type (`inner`, `cross`, `outer`/`full`, `left` or
+   * `right` variants), returning each matching pair of records as a tuple.
+   */
+  def joinWith[U](other: Dataset[U], condition: Column, joinType: String): Dataset[(T, U)] = {
+    checkSameSparkSession(other)
+    val joinTypeValue = Dataset.toJoinType(joinType, skipSemiAnti = true)
+    val (leftNullable, rightNullable) = joinTypeValue match {
+      case proto.Join.JoinType.JOIN_TYPE_INNER | proto.Join.JoinType.JOIN_TYPE_CROSS =>
+        (false, false)
+      case proto.Join.JoinType.JOIN_TYPE_FULL_OUTER => (true, true)
+      case proto.Join.JoinType.JOIN_TYPE_LEFT_OUTER => (false, true)
+      case proto.Join.JoinType.JOIN_TYPE_RIGHT_OUTER => (true, false)
+      case e => throw new IllegalArgumentException(s"Unsupported join type '$e'.")
+    }
+    val tupleEncoder =
+      Encoder.tuple[(T, U)](Seq(encoder, other.encoder), Seq(leftNullable, rightNullable))
+    sparkSession.newDataset(
+      RelType.Join(
+        proto.Join(
+          left = Some(relation),
+          right = Some(other.relation),
+          joinCondition = Some(condition.expr),
+          joinType = joinTypeValue,
+          joinDataType = Some(
+            proto.Join.JoinDataType(
+              isLeftStruct = encoder.isStruct,
+              isRightStruct = other.encoder.isStruct
+            )
+          )
+        )
+      ),
+      tupleEncoder,
+      Seq(condition)
+    )
+  }
 
   /** Lateral join with a correlated `right` relation. */
   def lateralJoin(right: Dataset[?]): DataFrame = buildLateralJoin(right, None, "inner")
@@ -320,7 +599,8 @@ class Dataset[T] private[sql] (
       right: Dataset[?],
       joinExprs: Option[Column],
       joinType: String
-  ): DataFrame =
+  ): DataFrame = {
+    checkSameSparkSession(right)
     withInput(
       RelType.LateralJoin(
         proto.LateralJoin(
@@ -329,31 +609,71 @@ class Dataset[T] private[sql] (
           joinCondition = joinExprs.map(_.expr),
           joinType = Dataset.toJoinType(joinType)
         )
-      )
+      ),
+      joinExprs.toSeq
     )
+  }
 
-  private def buildJoin(
+  /**
+   * Combines the columns of this DataFrame with `other` side by side, preserving row alignment.
+   * Both must derive from the same source through projection-only operations (`select`,
+   * `withColumn`, ...); otherwise the server raises an `AnalysisException`. Requires Spark 4.3+.
+   */
+  def zip(other: Dataset[?]): DataFrame = {
+    checkSameSparkSession(other)
+    withInput(RelType.Zip(proto.Zip(left = Some(relation), right = Some(other.relation))))
+  }
+
+  /**
+   * Nearest-by top-K ranking join with the default `inner` join type: for each row of this Dataset,
+   * returns up to `numResults` rows of `right` ranked by `rankingExpression`. `mode` is `approx` or
+   * `exact`; `direction` is `distance` (smallest first) or `similarity` (largest first). Requires
+   * Spark 4.2+.
+   */
+  def nearestByJoin(
       right: Dataset[?],
-      joinExprs: Option[Column],
-      usingColumns: Seq[String],
-      joinType: String
+      rankingExpression: Column,
+      numResults: Int,
+      mode: String,
+      direction: String
   ): DataFrame =
+    nearestByJoin(right, rankingExpression, numResults, mode, direction, "inner")
+
+  /**
+   * Nearest-by top-K ranking join; `joinType` is `inner` or `leftouter`. The arguments are
+   * validated client-side with the same `NEAREST_BY_JOIN.*` errors as the server. Requires Spark
+   * 4.2+.
+   */
+  def nearestByJoin(
+      right: Dataset[?],
+      rankingExpression: Column,
+      numResults: Int,
+      mode: String,
+      direction: String,
+      joinType: String
+  ): DataFrame = {
+    checkSameSparkSession(right)
+    Dataset.validateNearestByJoinArgs(numResults, joinType, mode, direction)
     withInput(
-      RelType.Join(
-        proto.Join(
+      RelType.NearestByJoin(
+        proto.NearestByJoin(
           left = Some(relation),
           right = Some(right.relation),
-          joinCondition = joinExprs.map(_.expr),
-          joinType = Dataset.toJoinType(joinType),
-          usingColumns = usingColumns
+          rankingExpression = Some(rankingExpression.expr),
+          numResults = numResults,
+          joinType = joinType,
+          mode = mode,
+          direction = direction
         )
-      )
+      ),
+      Seq(rankingExpression)
     )
+  }
 
   // -- Repartitioning --------------------------------------------------------
 
-  def repartition(numPartitions: Int): DataFrame =
-    withInput(
+  def repartition(numPartitions: Int): Dataset[T] =
+    withSameType(
       RelType.Repartition(
         proto.Repartition(
           input = Some(relation),
@@ -363,29 +683,56 @@ class Dataset[T] private[sql] (
       )
     )
 
-  def repartition(numPartitions: Int, partitionExprs: Column*): DataFrame =
-    withInput(
+  def repartition(numPartitions: Int, partitionExprs: Column*): Dataset[T] =
+    repartitionByExpression(Some(numPartitions), partitionExprs.map(_.expr), partitionExprs)
+
+  def repartition(partitionExprs: Column*): Dataset[T] =
+    repartitionByExpression(None, partitionExprs.map(_.expr), partitionExprs)
+
+  /** Range-partitions by the given expressions into `numPartitions`. */
+  def repartitionByRange(numPartitions: Int, partitionExprs: Column*): Dataset[T] =
+    repartitionByExpression(Some(numPartitions), rangeExprs(partitionExprs), partitionExprs)
+
+  /** Range-partitions by the given expressions. */
+  def repartitionByRange(partitionExprs: Column*): Dataset[T] =
+    repartitionByExpression(None, rangeExprs(partitionExprs), partitionExprs)
+
+  private def rangeExprs(cols: Seq[Column]): Seq[proto.Expression] =
+    cols.map(c =>
+      proto.Expression(exprType = proto.Expression.ExprType.SortOrder(Dataset.toSortOrder(c)))
+    )
+
+  /**
+   * Repartitions into `numPartitions` partitions, placing each row in the partition whose id is
+   * given by `partitionIdExpr` (evaluated per row), without hashing.
+   */
+  def repartitionById(numPartitions: Int, partitionIdExpr: Column): Dataset[T] = {
+    val direct = proto.Expression(exprType =
+      proto.Expression.ExprType.DirectShufflePartitionId(
+        proto.Expression.DirectShufflePartitionID(child = Some(partitionIdExpr.expr))
+      )
+    )
+    repartitionByExpression(Some(numPartitions), Seq(direct), Seq(partitionIdExpr))
+  }
+
+  private def repartitionByExpression(
+      numPartitions: Option[Int],
+      partitionExprs: Seq[proto.Expression],
+      cols: Seq[Column]
+  ): Dataset[T] =
+    withSameType(
       RelType.RepartitionByExpression(
         proto.RepartitionByExpression(
           input = Some(relation),
-          partitionExprs = partitionExprs.map(_.expr),
-          numPartitions = Some(numPartitions)
+          partitionExprs = partitionExprs,
+          numPartitions = numPartitions
         )
-      )
+      ),
+      cols
     )
 
-  def repartition(partitionExprs: Column*): DataFrame =
-    withInput(
-      RelType.RepartitionByExpression(
-        proto.RepartitionByExpression(
-          input = Some(relation),
-          partitionExprs = partitionExprs.map(_.expr)
-        )
-      )
-    )
-
-  def coalesce(numPartitions: Int): DataFrame =
-    withInput(
+  def coalesce(numPartitions: Int): Dataset[T] =
+    withSameType(
       RelType.Repartition(
         proto.Repartition(
           input = Some(relation),
@@ -397,13 +744,13 @@ class Dataset[T] private[sql] (
 
   // -- Sampling --------------------------------------------------------------
 
-  def sample(fraction: Double): DataFrame = sample(withReplacement = false, fraction)
-  def sample(fraction: Double, seed: Long): DataFrame =
+  def sample(fraction: Double): Dataset[T] = sample(withReplacement = false, fraction)
+  def sample(fraction: Double, seed: Long): Dataset[T] =
     sample(withReplacement = false, fraction, seed)
-  def sample(withReplacement: Boolean, fraction: Double): DataFrame =
+  def sample(withReplacement: Boolean, fraction: Double): Dataset[T] =
     sample(withReplacement, fraction, scala.util.Random.nextLong())
-  def sample(withReplacement: Boolean, fraction: Double, seed: Long): DataFrame =
-    withInput(
+  def sample(withReplacement: Boolean, fraction: Double, seed: Long): Dataset[T] =
+    withSameType(
       RelType.Sample(
         proto.Sample(
           input = Some(relation),
@@ -415,6 +762,40 @@ class Dataset[T] private[sql] (
       )
     )
 
+  /** Randomly splits this Dataset with the given weights and a fixed seed. */
+  def randomSplit(weights: Array[Double], seed: Long): Array[Dataset[T]] = {
+    require(
+      weights.forall(_ >= 0),
+      s"Weights must be nonnegative, but got ${weights.mkString("[", ",", "]")}"
+    )
+    val sum = weights.sum
+    require(sum > 0, s"Sum of weights must be positive, but got ${weights.mkString("[", ",", "]")}")
+    val bounds = weights.scanLeft(0.0)((acc, w) => acc + w / sum)
+    weights.indices.map { i =>
+      withSameType(
+        RelType.Sample(
+          proto.Sample(
+            input = Some(relation),
+            lowerBound = bounds(i),
+            upperBound = bounds(i + 1),
+            withReplacement = Some(false),
+            seed = Some(seed),
+            // Sort each partition server-side so the splits are disjoint across executions.
+            deterministicOrder = true
+          )
+        )
+      )
+    }.toArray
+  }
+
+  /** Randomly splits this Dataset with the given weights. */
+  def randomSplit(weights: Array[Double]): Array[Dataset[T]] =
+    randomSplit(weights, scala.util.Random.nextLong())
+
+  /** (Java-specific) Randomly splits this Dataset with the given weights and seed. */
+  def randomSplitAsList(weights: Array[Double], seed: Long): java.util.List[Dataset[T]] =
+    java.util.Arrays.asList(randomSplit(weights, seed)*)
+
   // -- Grouping & aggregation ------------------------------------------------
 
   def groupBy(cols: Column*): RelationalGroupedDataset =
@@ -424,16 +805,36 @@ class Dataset[T] private[sql] (
 
   def rollup(cols: Column*): RelationalGroupedDataset =
     new RelationalGroupedDataset(this, cols, proto.Aggregate.GroupType.GROUP_TYPE_ROLLUP)
+  def rollup(col1: String, cols: String*): RelationalGroupedDataset =
+    rollup((col1 +: cols).map(Column.fromName)*)
   def cube(cols: Column*): RelationalGroupedDataset =
     new RelationalGroupedDataset(this, cols, proto.Aggregate.GroupType.GROUP_TYPE_CUBE)
+  def cube(col1: String, cols: String*): RelationalGroupedDataset =
+    cube((col1 +: cols).map(Column.fromName)*)
+
+  /**
+   * Creates a multi-dimensional aggregation over the given grouping sets, e.g.
+   * `ds.groupingSets(Seq(Seq($"dept", $"gender"), Seq()), $"dept", $"gender").agg(...)`.
+   */
+  def groupingSets(groupingSets: Seq[Seq[Column]], cols: Column*): RelationalGroupedDataset =
+    new RelationalGroupedDataset(
+      this,
+      cols,
+      proto.Aggregate.GroupType.GROUP_TYPE_GROUPING_SETS,
+      groupingSets = groupingSets
+    )
 
   def agg(expr: Column, exprs: Column*): DataFrame = groupBy().agg(expr, exprs*)
+  def agg(aggExpr: (String, String), aggExprs: (String, String)*): DataFrame =
+    groupBy().agg(aggExpr, aggExprs*)
+  def agg(exprs: Map[String, String]): DataFrame = groupBy().agg(exprs)
+  def agg(exprs: java.util.Map[String, String]): DataFrame = groupBy().agg(exprs)
 
   // -- Actions ---------------------------------------------------------------
 
   def collect(): Array[T] =
     sparkSession.execute(plan).toArray.map(encoder.fromRow)(using encoder.classTag)
-  def collectAsList(): java.util.List[T] = collect().toList.asJava
+  def collectAsList(): java.util.List[T] = java.util.Arrays.asList(collect()*)
   def toLocalIterator(): java.util.Iterator[T] =
     sparkSession.execute(plan).iterator.map(encoder.fromRow).asJava
 
@@ -448,12 +849,16 @@ class Dataset[T] private[sql] (
     if (rows.isEmpty) 0L else rows.head.getLong(0)
   }
 
-  def head(n: Int): Array[T] =
-    withSameType(RelType.Limit(proto.Limit(input = Some(relation), limit = n))).collect()
+  def head(n: Int): Array[T] = limit(n).collect()
   def head(): T = head(1).head
   def first(): T = head()
   def take(n: Int): Array[T] = head(n)
-  def takeAsList(n: Int): java.util.List[T] = take(n).toList.asJava
+  def takeAsList(n: Int): java.util.List[T] = java.util.Arrays.asList(take(n)*)
+
+  /** Returns the last `n` rows. Like `collect()`, this moves the data into the client. */
+  def tail(n: Int): Array[T] =
+    withSameType(RelType.Tail(proto.Tail(input = Some(relation), limit = n))).collect()
+
   def isEmpty: Boolean =
     sparkSession
       .execute(
@@ -494,13 +899,13 @@ class Dataset[T] private[sql] (
   def explain(): Unit = explain("simple")
   def explain(extended: Boolean): Unit = explain(if (extended) "extended" else "simple")
   def explain(mode: String): Unit = {
-    val explainMode = mode.toLowerCase match {
+    val explainMode = mode.trim.toLowerCase(java.util.Locale.ROOT) match {
       case "simple" => proto.AnalyzePlanRequest.Explain.ExplainMode.EXPLAIN_MODE_SIMPLE
       case "extended" => proto.AnalyzePlanRequest.Explain.ExplainMode.EXPLAIN_MODE_EXTENDED
       case "codegen" => proto.AnalyzePlanRequest.Explain.ExplainMode.EXPLAIN_MODE_CODEGEN
       case "cost" => proto.AnalyzePlanRequest.Explain.ExplainMode.EXPLAIN_MODE_COST
       case "formatted" => proto.AnalyzePlanRequest.Explain.ExplainMode.EXPLAIN_MODE_FORMATTED
-      case other => throw new IllegalArgumentException(s"Unsupported explain mode: $other")
+      case _ => throw new IllegalArgumentException("Unsupported explain mode: " + mode)
     }
     print(sparkSession.client.explainString(plan, explainMode))
   }
@@ -514,6 +919,10 @@ class Dataset[T] private[sql] (
     createView(viewName, replace = false, global = true)
   def createOrReplaceGlobalTempView(viewName: String): Unit =
     createView(viewName, replace = true, global = true)
+
+  /** Registers this Dataset as a temporary view. Use [[createOrReplaceTempView]] instead. */
+  @deprecated("Use createOrReplaceTempView(viewName) instead.", "2.0.0")
+  def registerTempTable(tableName: String): Unit = createOrReplaceTempView(tableName)
 
   private def createView(viewName: String, replace: Boolean, global: Boolean): Unit =
     sparkSession.executeCommand(
@@ -553,47 +962,40 @@ class Dataset[T] private[sql] (
   /** Returns a [[DataFrameStatFunctions]] for statistic functions. */
   def stat: DataFrameStatFunctions = new DataFrameStatFunctions(this)
 
-  /** Defines named observed metrics computed while this Dataset is processed. */
-  def observe(observation: Observation, expr: Column, exprs: Column*): DataFrame =
-    withInput(RelType.CollectMetrics(observation.markObserved(this, expr +: exprs)))
+  /**
+   * Defines named observed metrics computed while this Dataset is processed. The metrics are
+   * reported with the query result; use the [[Observation]] overload to read them back.
+   */
+  def observe(name: String, expr: Column, exprs: Column*): Dataset[T] =
+    withSameType(
+      RelType.CollectMetrics(
+        proto.CollectMetrics(
+          input = Some(relation),
+          name = name,
+          metrics = (expr +: exprs).map(_.expr)
+        )
+      ),
+      expr +: exprs
+    )
+
+  /** Defines observed metrics whose values can be read back through `observation.get`. */
+  def observe(observation: Observation, expr: Column, exprs: Column*): Dataset[T] = {
+    observation.markRegistered()
+    val ds = observe(observation.name, expr, exprs*)
+    sparkSession.registerObservation(ds.planId, observation)
+    ds
+  }
 
   /** Concisely applies a transformation to this Dataset. */
   def transform[U](t: Dataset[T] => Dataset[U]): Dataset[U] = t(this)
 
   // -- Misc ------------------------------------------------------------------
 
-  def sameSemantics(other: Dataset[?]): Boolean =
+  def sameSemantics(other: Dataset[T]): Boolean =
     sparkSession.client.sameSemantics(plan, other.plan)
   def semanticHash(): Int = sparkSession.client.semanticHash(plan)
 
   // -- Additional relational transformations ---------------------------------
-
-  /** Range-partitions by the given expressions into `numPartitions`. */
-  def repartitionByRange(numPartitions: Int, partitionExprs: Column*): DataFrame =
-    withInput(
-      RelType.RepartitionByExpression(
-        proto.RepartitionByExpression(
-          input = Some(relation),
-          partitionExprs = partitionExprs.map(c =>
-            proto.Expression(exprType = proto.Expression.ExprType.SortOrder(Dataset.toSortOrder(c)))
-          ),
-          numPartitions = Some(numPartitions)
-        )
-      )
-    )
-
-  /** Range-partitions by the given expressions. */
-  def repartitionByRange(partitionExprs: Column*): DataFrame =
-    withInput(
-      RelType.RepartitionByExpression(
-        proto.RepartitionByExpression(
-          input = Some(relation),
-          partitionExprs = partitionExprs.map(c =>
-            proto.Expression(exprType = proto.Expression.ExprType.SortOrder(Dataset.toSortOrder(c)))
-          )
-        )
-      )
-    )
 
   /** Unpivots (melts) a DataFrame from wide to long format. */
   def unpivot(
@@ -611,7 +1013,8 @@ class Dataset[T] private[sql] (
           variableColumnName = variableColumnName,
           valueColumnName = valueColumnName
         )
-      )
+      ),
+      ids.toSeq ++ values.toSeq
     )
 
   /** Unpivots, inferring the value columns from those not in `ids`. */
@@ -624,7 +1027,8 @@ class Dataset[T] private[sql] (
           variableColumnName = variableColumnName,
           valueColumnName = valueColumnName
         )
-      )
+      ),
+      ids.toSeq
     )
 
   /** Alias for [[unpivot]]. */
@@ -649,12 +1053,13 @@ class Dataset[T] private[sql] (
     withInput(
       RelType.Transpose(
         proto.Transpose(input = Some(relation), indexColumns = Seq(indexColumn.expr))
-      )
+      ),
+      Seq(indexColumn)
     )
 
   /** Defines an event-time watermark for this streaming Dataset. */
-  def withWatermark(eventTime: String, delayThreshold: String): DataFrame =
-    withInput(
+  def withWatermark(eventTime: String, delayThreshold: String): Dataset[T] =
+    withSameType(
       RelType.WithWatermark(
         proto.WithWatermark(
           input = Some(relation),
@@ -664,62 +1069,40 @@ class Dataset[T] private[sql] (
       )
     )
 
-  /** Returns the content as a DataFrame of JSON strings in a single `value` column. */
-  def toJSON: DataFrame =
-    withInput(
-      RelType.Project(
-        proto.Project(
-          input = Some(relation),
-          expressions = Seq(functions.expr("to_json(struct(*))").as("value").expr)
-        )
-      )
-    )
-
-  /** Randomly splits this Dataset with the given weights and a fixed seed. */
-  def randomSplit(weights: Array[Double], seed: Long): Array[DataFrame] = {
-    require(weights.forall(_ >= 0), "Weights must be nonnegative")
-    val sum = weights.sum
-    require(sum > 0, "Sum of weights must be positive")
-    val bounds = weights.scanLeft(0.0)((acc, w) => acc + w / sum)
-    weights.indices.map { i =>
-      withInput(
-        RelType.Sample(
-          proto.Sample(
-            input = Some(relation),
-            lowerBound = bounds(i),
-            upperBound = bounds(i + 1),
-            withReplacement = Some(false),
-            seed = Some(seed),
-            deterministicOrder = true
-          )
-        )
-      )
-    }.toArray
-  }
-
-  /** Randomly splits this Dataset with the given weights. */
-  def randomSplit(weights: Array[Double]): Array[DataFrame] =
-    randomSplit(weights, scala.util.Random.nextLong())
+  /** Returns the content as a `Dataset[String]` of JSON documents in a `value` column. */
+  def toJSON: Dataset[String] =
+    select(functions.to_json(functions.struct(col("*"))).as("value")).as[String]
 
   /** Eagerly checkpoints this Dataset to reliable storage and returns the checkpointed copy. */
-  def checkpoint(): DataFrame = checkpoint(eager = true, reliableCheckpoint = true)
+  def checkpoint(): Dataset[T] = checkpoint(eager = true, reliableCheckpoint = true, None)
 
   /** Checkpoints this Dataset to reliable storage. */
-  def checkpoint(eager: Boolean): DataFrame = checkpoint(eager, reliableCheckpoint = true)
+  def checkpoint(eager: Boolean): Dataset[T] =
+    checkpoint(eager, reliableCheckpoint = true, None)
 
   /** Eagerly locally checkpoints this Dataset. */
-  def localCheckpoint(): DataFrame = checkpoint(eager = true, reliableCheckpoint = false)
+  def localCheckpoint(): Dataset[T] = checkpoint(eager = true, reliableCheckpoint = false, None)
 
   /** Locally checkpoints this Dataset. */
-  def localCheckpoint(eager: Boolean): DataFrame = checkpoint(eager, reliableCheckpoint = false)
+  def localCheckpoint(eager: Boolean): Dataset[T] =
+    checkpoint(eager, reliableCheckpoint = false, None)
 
-  private def checkpoint(eager: Boolean, reliableCheckpoint: Boolean): DataFrame = {
+  /** Locally checkpoints this Dataset, caching it at the given storage level. */
+  def localCheckpoint(eager: Boolean, storageLevel: StorageLevel): Dataset[T] =
+    checkpoint(eager, reliableCheckpoint = false, Some(storageLevel))
+
+  private def checkpoint(
+      eager: Boolean,
+      reliableCheckpoint: Boolean,
+      storageLevel: Option[StorageLevel]
+  ): Dataset[T] = {
     val command = proto.Command(commandType =
       proto.Command.CommandType.CheckpointCommand(
         proto.CheckpointCommand(
           relation = Some(relation),
           local = !reliableCheckpoint,
-          eager = eager
+          eager = eager,
+          storageLevel = storageLevel.map(_.toProto)
         )
       )
     )
@@ -729,16 +1112,16 @@ class Dataset[T] private[sql] (
       .find(_.responseType.isCheckpointCommandResult)
       .map(_.getCheckpointCommandResult.getRelation)
       .getOrElse(throw new RuntimeException("CheckpointCommandResult missing from server response"))
-    sparkSession.newDataFrame(RelType.CachedRemoteRelation(cached))
+    withSameType(RelType.CachedRemoteRelation(cached))
   }
 
   // -- Persistence -----------------------------------------------------------
 
   /** Persists this Dataset with the default storage level (`MEMORY_AND_DISK`). */
-  def persist(): this.type = persist(org.apache.spark.storage.StorageLevel.MEMORY_AND_DISK)
+  def persist(): this.type = persist(StorageLevel.MEMORY_AND_DISK)
 
   /** Persists this Dataset with the given storage level. */
-  def persist(newLevel: org.apache.spark.storage.StorageLevel): this.type = {
+  def persist(newLevel: StorageLevel): this.type = {
     sparkSession.client.analyze(
       proto.AnalyzePlanRequest.Analyze.Persist(
         proto.AnalyzePlanRequest
@@ -765,8 +1148,8 @@ class Dataset[T] private[sql] (
   def unpersist(): this.type = unpersist(blocking = false)
 
   /** Returns the current storage level of this Dataset. */
-  def storageLevel: org.apache.spark.storage.StorageLevel =
-    org.apache.spark.storage.StorageLevel.fromProto(
+  def storageLevel: StorageLevel =
+    StorageLevel.fromProto(
       sparkSession.client
         .analyze(
           proto.AnalyzePlanRequest.Analyze
@@ -788,7 +1171,7 @@ class Dataset[T] private[sql] (
   def mergeInto(table: String, condition: Column): MergeIntoWriter[T] =
     new MergeIntoWriter[T](table, this, condition)
 
-  // -- Schema reconciliation & watermark dedup --------------------------------
+  // -- Schema reconciliation -------------------------------------------------
 
   /**
    * Returns a new Dataset where each row is reconciled to match the specified schema (by column
@@ -803,32 +1186,6 @@ class Dataset[T] private[sql] (
         )
       )
     )
-
-  /** Drops duplicates within the event-time watermark, keeping state bounded for streaming. */
-  def dropDuplicatesWithinWatermark(): DataFrame =
-    withInput(
-      RelType.Deduplicate(
-        proto.Deduplicate(
-          input = Some(relation),
-          allColumnsAsKeys = Some(true),
-          withinWatermark = Some(true)
-        )
-      )
-    )
-
-  def dropDuplicatesWithinWatermark(colNames: Seq[String]): DataFrame =
-    withInput(
-      RelType.Deduplicate(
-        proto.Deduplicate(
-          input = Some(relation),
-          columnNames = colNames,
-          withinWatermark = Some(true)
-        )
-      )
-    )
-
-  def dropDuplicatesWithinWatermark(col1: String, cols: String*): DataFrame =
-    dropDuplicatesWithinWatermark(col1 +: cols)
 }
 
 private[sql] object Dataset {
@@ -853,15 +1210,68 @@ private[sql] object Dataset {
         )
     }
 
-  def toJoinType(joinType: String): proto.Join.JoinType =
-    joinType.toLowerCase.replaceAll("[_ ]", "") match {
+  def toJoinType(joinType: String, skipSemiAnti: Boolean = false): proto.Join.JoinType =
+    joinType.toLowerCase(java.util.Locale.ROOT).replaceAll("[_ ]", "") match {
       case "inner" => proto.Join.JoinType.JOIN_TYPE_INNER
       case "cross" => proto.Join.JoinType.JOIN_TYPE_CROSS
       case "outer" | "full" | "fullouter" => proto.Join.JoinType.JOIN_TYPE_FULL_OUTER
       case "left" | "leftouter" => proto.Join.JoinType.JOIN_TYPE_LEFT_OUTER
       case "right" | "rightouter" => proto.Join.JoinType.JOIN_TYPE_RIGHT_OUTER
-      case "leftsemi" | "semi" => proto.Join.JoinType.JOIN_TYPE_LEFT_SEMI
-      case "leftanti" | "anti" => proto.Join.JoinType.JOIN_TYPE_LEFT_ANTI
-      case other => throw new IllegalArgumentException(s"Unsupported join type: $other")
+      case "leftsemi" | "semi" if !skipSemiAnti => proto.Join.JoinType.JOIN_TYPE_LEFT_SEMI
+      case "leftanti" | "anti" if !skipSemiAnti => proto.Join.JoinType.JOIN_TYPE_LEFT_ANTI
+      case _ => throw new IllegalArgumentException(s"Unsupported join type '$joinType'.")
     }
+
+  // The acceptance lists mirror `NearestByJoinValidation` in Apache Spark.
+  private val NearestByMaxNumResults = 100000
+  private val NearestBySupportedJoinTypes = Seq("inner", "leftouter", "left")
+  private val NearestBySupportedModes = Seq("approx", "exact")
+  private val NearestBySupportedDirections = Seq("distance", "similarity")
+
+  /**
+   * Validates `nearestByJoin` arguments client-side, raising the same `NEAREST_BY_JOIN.*` errors as
+   * the server so users see consistent failures without a round trip.
+   */
+  private[sql] def validateNearestByJoinArgs(
+      numResults: Int,
+      joinType: String,
+      mode: String,
+      direction: String
+  ): Unit = {
+    if (numResults < 1 || numResults > NearestByMaxNumResults) {
+      throw AnalysisException.withErrorClass(
+        "NEAREST_BY_JOIN.NUM_RESULTS_OUT_OF_RANGE",
+        Map(
+          "numResults" -> numResults.toString,
+          "min" -> "1",
+          "max" -> NearestByMaxNumResults.toString
+        )
+      )
+    }
+    if (
+      !NearestBySupportedJoinTypes.contains(
+        joinType.toLowerCase(java.util.Locale.ROOT).replace("_", "")
+      )
+    ) {
+      throw AnalysisException.withErrorClass(
+        "NEAREST_BY_JOIN.UNSUPPORTED_JOIN_TYPE",
+        Map("joinType" -> joinType, "supported" -> "'INNER', 'LEFT OUTER'")
+      )
+    }
+    if (!NearestBySupportedModes.contains(mode.toLowerCase(java.util.Locale.ROOT))) {
+      throw AnalysisException.withErrorClass(
+        "NEAREST_BY_JOIN.UNSUPPORTED_MODE",
+        Map("mode" -> mode, "supported" -> NearestBySupportedModes.mkString("'", "', '", "'"))
+      )
+    }
+    if (!NearestBySupportedDirections.contains(direction.toLowerCase(java.util.Locale.ROOT))) {
+      throw AnalysisException.withErrorClass(
+        "NEAREST_BY_JOIN.UNSUPPORTED_DIRECTION",
+        Map(
+          "direction" -> direction,
+          "supported" -> NearestBySupportedDirections.mkString("'", "', '", "'")
+        )
+      )
+    }
+  }
 }

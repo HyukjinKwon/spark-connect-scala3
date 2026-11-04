@@ -17,6 +17,7 @@
 package org.apache.spark.sql
 
 import scala.collection.mutable
+import scala.jdk.CollectionConverters._
 
 import org.apache.spark.connect.proto
 
@@ -36,12 +37,25 @@ final class DataFrameWriterV2 private[sql] (table: String, ds: Dataset[?]) {
   private val properties = mutable.LinkedHashMap.empty[String, String]
   private var partitioning: Seq[proto.Expression] = Nil
   private var clustering: Seq[String] = Nil
+  private var withSchemaEvolutionEnabled: Boolean = false
 
   /** Specifies a provider for the underlying output data source. */
   def using(provider: String): this.type = { this.provider = Some(provider); this }
 
   def option(key: String, value: String): this.type = { options(key) = value; this }
+  def option(key: String, value: Boolean): this.type = option(key, value.toString)
+  def option(key: String, value: Long): this.type = option(key, value.toString)
+  def option(key: String, value: Double): this.type = option(key, value.toString)
   def options(opts: scala.collection.Map[String, String]): this.type = { options ++= opts; this }
+
+  /** (Java-specific) Adds write options from a Java map. */
+  def options(opts: java.util.Map[String, String]): this.type = options(opts.asScala)
+
+  /**
+   * Enables automatic schema evolution for this write (Spark 4.2+). The target table must declare
+   * the `AUTOMATIC_SCHEMA_EVOLUTION` capability.
+   */
+  def withSchemaEvolution(): this.type = { withSchemaEvolutionEnabled = true; this }
 
   def tableProperty(property: String, value: String): this.type = {
     properties(property) = value; this
@@ -96,7 +110,8 @@ final class DataFrameWriterV2 private[sql] (table: String, ds: Dataset[?]) {
       tableProperties = properties.toMap,
       clusteringColumns = clustering,
       mode = mode,
-      overwriteCondition = overwriteCondition
+      overwriteCondition = overwriteCondition,
+      withSchemaEvolution = withSchemaEvolutionEnabled
     )
 
   private def run(

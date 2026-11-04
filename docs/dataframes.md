@@ -182,10 +182,49 @@ spark.sql("SELECT bucket, count(*) AS n FROM nums GROUP BY bucket ORDER BY bucke
 `createGlobalTempView` registers a view in the cross-session `global_temp`
 database.
 
+## Zipping and indexing
+
+```scala
+// Append a consecutive 0-based index column (Spark 4.2+).
+spark.range(10, 13).zipWithIndex("i").show()
+
+// Put the columns of two projections of the same DataFrame side by side, row by
+// row (Spark 4.3+). Both sides must derive from the same source through
+// projection-only operations (select, withColumn, ...).
+val base = spark.range(3)
+base.select(col("id")).zip(base.select((col("id") * 10).as("tens"))).show()
+```
+
+## Nearest-neighbor joins
+
+`nearestByJoin` (Spark 4.2+) returns, for each left row, the `numResults` right
+rows that rank best by an expression, either `"exact"` or `"approx"`, ordered by
+`"distance"` (smallest first) or `"similarity"` (largest first):
+
+```scala
+val queries = spark.range(3).toDF()
+val points = spark.range(0, 30, 10).toDF()
+queries
+  .nearestByJoin(points, abs(queries("id") - points("id")), 1, "exact", "distance")
+  .show()
+```
+
+## Subqueries
+
+`scalar()` and `exists()` turn a DataFrame into a subquery expression (Spark 4.0+
+servers), and `Column.isin(dataset)` tests membership in one (Spark 4.1+ servers):
+
+```scala
+val t = spark.range(10)
+t.where(col("id") <= spark.range(3).select(max(col("id"))).scalar()).show()
+t.where(spark.range(1).exists()).show()
+t.where(col("id").isin(spark.range(2).toDF())).show()
+```
+
 ## Actions
 
 ```scala
-val df = spark.range(100)
+val df = spark.range(100).toDF()
 
 df.collect()          // Array[Row]
 df.collectAsList()    // java.util.List[Row]
@@ -209,9 +248,11 @@ row.getString(1)   // "x"
 
 A `DataFrame` is a `Dataset[Row]`. You can reinterpret it as a typed `Dataset[T]`
 with `as[T]`, or build one from local values with `spark.createDataset`. Encoders
-are derived at compile time for case classes, tuples, primitives, `Option`,
-collections, and maps. This is a purely client-side decoding step, so no closure is
-sent to the server.
+are derived at compile time for case classes, tuples, primitives (and their boxed
+Java forms), `java.time` values, `Option`, collections, and maps, and the
+`Encoders` object offers the same factories as Apache Spark (`Encoders.product`,
+`Encoders.tuple`, `Encoders.STRING`, ...). This is a purely client-side decoding
+step, so no closure is sent to the server.
 
 ```scala
 import org.apache.spark.sql.SparkSession
@@ -234,8 +275,29 @@ spark.range(5).as[Long].collect()                       // Array[Long]
 spark.sql("SELECT 1 AS a, 'x' AS b").as[(Int, String)]  // Dataset[(Int, String)]
 ```
 
-Typed *actions* (`collect`, `head`, `first`, `take`, `toLocalIterator`,
-`collectAsList`) return `T`. Note that the typed transformations that take a Scala
-function -- `map`, `flatMap`, `mapPartitions`, `groupByKey`, `reduce` -- are not
-supported, because they run a closure on the server (the UDF mechanism). Chain the
-relational operators (`select`, `filter`, ...) and call `as[T]` at the end.
+Typed *actions* (`collect`, `head`, `first`, `take`, `tail`, `toLocalIterator`,
+`collectAsList`) return `T`, and the operators that do not change the row shape
+keep the element type, exactly as in Apache Spark: `filter`/`where`, `orderBy`,
+`limit`/`offset`, `distinct`/`dropDuplicates`, `union`/`intersect`/`except`,
+`sample`, `repartition`, `persist`, `observe`, and friends return `Dataset[T]`.
+`spark.range` returns a `Dataset[java.lang.Long]`.
+
+Typed columns build typed results without a closure:
+
+```scala
+val df = spark.range(3).toDF()
+
+// select with TypedColumns returns a Dataset of the column types (up to 5).
+val pairs: Array[(Long, String)] =
+  df.select(col("id").as[Long], col("id").cast("string").as[String]).collect()
+
+// joinWith pairs the full rows of both sides.
+val ids = spark.range(3)
+val joined: Dataset[(Person, java.lang.Long)] =
+  ds.joinWith(ids, ds("id") === ids("id"), "left")
+```
+
+Note that the typed transformations that take a Scala function -- `map`,
+`flatMap`, `mapPartitions`, `groupByKey`, `reduce` -- are not supported, because
+they run a closure on the server (the UDF mechanism). Chain the relational
+operators (`select`, `filter`, ...) and call `as[T]` at the end.

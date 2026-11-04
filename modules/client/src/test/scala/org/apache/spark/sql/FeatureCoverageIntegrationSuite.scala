@@ -108,7 +108,7 @@ class FeatureCoverageIntegrationSuite extends RemoteSparkSuite {
 
   test("toJSON") {
     withSpark { s =>
-      assert(s.range(0, 1).toJSON.collect().head.getString(0).contains("\"id\""))
+      assert(s.range(0, 1).toJSON.collect().head.contains("\"id\""))
     }
   }
 

@@ -18,6 +18,68 @@
 package org.apache.spark.sql.catalog
 
 /**
+ * A catalog in Spark, as returned by `Catalog.listCatalogs`.
+ *
+ * @param name
+ *   name of the catalog.
+ * @param description
+ *   description of the catalog (may be `null`).
+ */
+case class CatalogMetadata(name: String, description: String) {
+  override def toString: String =
+    s"Catalog[name='$name'${Option(description).map(d => s", description='$d'").getOrElse("")}]"
+}
+
+/**
+ * A partition of a table, as returned by `Catalog.listPartitions` (the same form as `SHOW
+ * PARTITIONS`, e.g. `year=2024/month=1`).
+ *
+ * @param partition
+ *   the partition description string.
+ */
+case class TablePartition(partition: String) {
+  override def toString: String = s"TablePartition[partition='$partition']"
+}
+
+/** A table property key and value, as returned by `Catalog.getTableProperties`. */
+case class CatalogTableProperty(key: String, value: String) {
+  override def toString: String = s"CatalogTableProperty[key='$key', value='$value']"
+}
+
+/**
+ * A column of a table, as returned by `Catalog.listColumns`.
+ *
+ * @param name
+ *   name of the column.
+ * @param description
+ *   description of the column (may be `null`).
+ * @param dataType
+ *   the column's data type as a string.
+ * @param nullable
+ *   whether the column is nullable.
+ * @param isPartition
+ *   whether the column is a partition column.
+ * @param isBucket
+ *   whether the column is a bucket column.
+ * @param isCluster
+ *   whether the column is a clustering column (always `false` on Spark 3.5 servers).
+ */
+case class Column(
+    name: String,
+    description: String,
+    dataType: String,
+    nullable: Boolean,
+    isPartition: Boolean,
+    isBucket: Boolean,
+    isCluster: Boolean
+) {
+  override def toString: String =
+    s"Column[name='$name'${Option(description).map(d => s", description='$d'").getOrElse("")}, " +
+      s"dataType='$dataType', nullable='$nullable', isPartition='$isPartition', " +
+      s"isBucket='$isBucket', isCluster='$isCluster']"
+}
+
+/**
  * A database in the catalog, as returned by [[Catalog.getDatabase]] / [[Catalog.listDatabases]].
  *
  * @param name

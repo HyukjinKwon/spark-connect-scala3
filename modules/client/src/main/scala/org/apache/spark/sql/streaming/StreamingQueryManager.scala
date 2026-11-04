@@ -40,6 +40,9 @@ class StreamingQueryManager private[sql] (spark: SparkSession) {
   /**
    * Returns the active query identified by `id`, or `null` if no active query with that id exists.
    */
+  /** Returns the active query with the given id, or `null` if there is none. */
+  def get(id: java.util.UUID): StreamingQuery = get(id.toString)
+
   def get(id: String): StreamingQuery = {
     val result = command(_.withGetQuery(id))
     if (result.resultType.isQuery) toStreamingQuery(result.getQuery) else null

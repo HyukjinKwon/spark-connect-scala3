@@ -46,9 +46,14 @@ class ColumnOpsSuite extends munit.FunSuite {
   }
 
   test("comparison/boolean operators map to the exact function names (no inversion)") {
-    assertEquals(fname(a === b), "==")
-    assertEquals(fname(a =!= b), "!=")
-    assertEquals(fname(a.notEqual(b)), "!=")
+    // Like Apache Spark's Connect client: `===` is `=`, and `=!=` is `!(a = b)`.
+    assertEquals(fname(a === b), "=")
+    assertEquals(fname(a =!= b), "!")
+    assertEquals(
+      (a =!= b).expr.getUnresolvedFunction.arguments.head.getUnresolvedFunction.functionName,
+      "="
+    )
+    assertEquals(fname(a.notEqual(b)), "!")
     assertEquals(fname(a < b), "<")
     assertEquals(fname(a <= b), "<=")
     assertEquals(fname(a > b), ">")
@@ -57,7 +62,7 @@ class ColumnOpsSuite extends munit.FunSuite {
     assertEquals(fname(a.eqNullSafe(b)), "<=>")
     assertEquals(fname(a && b), "and")
     assertEquals(fname(a || b), "or")
-    assertEquals(fname(!a), "not")
+    assertEquals(fname(!a), "!")
     assertEquals(fname(-a), "negative")
   }
 

@@ -55,7 +55,7 @@ ThisBuild / scalacOptions ++= Seq(
 
 val grpcVersion = "1.65.1"
 val arrowVersion = "17.0.0"
-val sparkConnectProtoVersion = "4.1.2" // Spark version the protobufs are sourced from.
+val sparkConnectProtoVersion = "4.3.0" // Spark version the protobufs are sourced from.
 
 // JVM module-access flags required by Arrow's off-heap memory on JDK 17+.
 val arrowJvmOptions = Seq(
@@ -111,7 +111,7 @@ lazy val client = (project in file("modules/client"))
       // (POM-visible) dependency so downstream users of stat.bloomFilter / countMinSketch get it
       // on their classpath; its only transitive compile dependency is the tiny annotations-only
       // spark-tags jar (all its other dependencies are test-scoped and do not propagate).
-      "org.apache.spark" % "spark-sketch_2.13" % "4.1.2",
+      "org.apache.spark" % "spark-sketch_2.13" % "4.3.0",
       "org.scalameta" %% "munit" % "1.0.2" % Test
     ),
     testFrameworks += new TestFramework("munit.Framework"),

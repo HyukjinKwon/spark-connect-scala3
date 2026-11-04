@@ -27,7 +27,7 @@ class CatalogIntegrationSuite extends RemoteSparkSuite {
       assert(s.catalog.listCatalogs().count() >= 1L)
       assert(s.catalog.listDatabases().count() >= 1L)
       assert(s.catalog.databaseExists("default"))
-      assert(s.catalog.currentCatalog.nonEmpty)
+      assert(s.catalog.currentCatalog().nonEmpty)
       assert(s.catalog.currentDatabase.nonEmpty)
       assert(s.catalog.listFunctions().count() > 0L)
       assert(s.catalog.functionExists("abs"))

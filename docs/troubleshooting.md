@@ -31,6 +31,11 @@ for a packaged app pass them to `java` directly. See
 - **Hangs on the first request:** the client retries transient failures with
   backoff, so a wrong host retries several times before failing. Re-check the
   endpoint passed to `.remote("sc://host:port")`.
+- **`too_many_pings` / `GOAWAY` from an older server:** the client sends
+  keepalive PINGs every 60 seconds (as Apache Spark 4.3's client does), which
+  servers older than Spark 4.3 may consider too frequent. The gRPC client backs
+  off on its own; to silence it, append `grpc_keepalive_enabled=false` or raise
+  `grpc_keepalive_time_ms` (for example to `300000`) in the connection string.
 - **TLS errors:** a `token` in the connection string implies TLS. Use a plain
   `sc://host:port` for a local plaintext server, or append `use_ssl=true` for a
   TLS endpoint (`sc://host:443/;use_ssl=true;token=...`). See
@@ -38,12 +43,24 @@ for a packaged app pass them to `java` directly. See
 
 ## Version compatibility
 
-The client is built against the Spark Connect 4.1 protocol and is tested against
-Apache Spark 3.5, 4.0, and 4.1. The protocol is backward compatible, but features
-added in a later server release are unavailable on older servers:
+The client is built against the Spark Connect 4.3 protocol and is tested against
+Apache Spark 3.5, 4.0, 4.1, 4.2, and 4.3. The protocol is backward compatible, but
+features added in a later server release are unavailable on older servers:
 
-- **Declarative Pipelines** require Spark 4.1 or newer.
-- Observed metrics (`Dataset.observe`) require Spark 4.0 or newer.
+- **Spark 4.0+**: observed metrics (`Dataset.observe`), subqueries (`scalar`,
+  `exists`), `spark.tvf`, and the seeded forms that `uuid()` and
+  `shuffle(e)` send (as Apache Spark 4.x clients do; on a 3.5 server use
+  `expr("uuid()")`).
+- **Spark 4.1+**: Declarative Pipelines, `cloneSession`, `isin(dataset)` IN
+  subqueries, and the `TIME` type.
+- **Spark 4.2+**: the catalog commands (`createDatabase`, `dropTable`,
+  `listPartitions`, `listViews`, `getTableProperties`, ...), `zipWithIndex`,
+  `nearestByJoin`, change data capture (`changes`), `Trigger.RealTime`, named
+  streaming sources, `withSchemaEvolution`, parsing a `Dataset[String]` as XML,
+  `getOperationStatuses`, and Auto CDC flows (SCD type 1).
+- **Spark 4.3+**: `zip`, nanosecond timestamp types, and SCD type 2 Auto CDC
+  flows with history tracking.
+- Functions follow their Apache Spark `@since` version.
 
 If the server rejects a relation or function, check the server version with
 `spark.version`.

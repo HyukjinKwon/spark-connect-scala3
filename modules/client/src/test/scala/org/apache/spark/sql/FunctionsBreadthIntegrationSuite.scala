@@ -155,7 +155,8 @@ class FunctionsBreadthIntegrationSuite extends RemoteSparkSuite {
           element_at(a, lit(1)),
           flatten(array(a, a)),
           reverse(a),
-          shuffle(a),
+          // shuffle(e) sends a client-side seed like Spark 4.x clients; 3.5 servers reject it.
+          if (serverAtLeast(4, 0)) shuffle(a) else expr("shuffle(arr)"),
           size(a),
           slice(a, lit(1), lit(2)),
           sort_array(a)

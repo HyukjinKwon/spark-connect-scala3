@@ -41,6 +41,14 @@ object DataTypeProtoConverter {
     case _: p.DataType.Kind.Date => DateType
     case _: p.DataType.Kind.Timestamp => TimestampType
     case _: p.DataType.Kind.TimestampNtz => TimestampNTZType
+    case k: p.DataType.Kind.Time =>
+      k.value.precision.map(TimeType(_)).getOrElse(TimeType())
+    case k: p.DataType.Kind.TimestampNtzNanos =>
+      k.value.precision.map(TimestampNTZNanosType(_)).getOrElse(TimestampNTZNanosType())
+    case k: p.DataType.Kind.TimestampLtzNanos =>
+      k.value.precision.map(TimestampLTZNanosType(_)).getOrElse(TimestampLTZNanosType())
+    case k: p.DataType.Kind.Geometry => GeometryType(k.value.srid)
+    case k: p.DataType.Kind.Geography => GeographyType(k.value.srid)
     case _: p.DataType.Kind.CalendarInterval => CalendarIntervalType
     case _: p.DataType.Kind.Variant => VariantType
     case k: p.DataType.Kind.Char => CharType(k.value.length)
@@ -67,6 +75,10 @@ object DataTypeProtoConverter {
       )
     case k: p.DataType.Kind.Struct =>
       StructType(k.value.fields.map(toStructField).toArray)
+    // User-defined types have no client-side class here; expose their underlying SQL type so
+    // schemas containing them (e.g. ML vectors) can still be inspected and decoded.
+    case k: p.DataType.Kind.Udt if k.value.sqlType.isDefined =>
+      toCatalystType(k.value.getSqlType)
     case k: p.DataType.Kind.Unparsed =>
       throw new IllegalArgumentException(
         s"Cannot convert unparsed data type: ${k.value.dataTypeString}"
@@ -99,6 +111,13 @@ object DataTypeProtoConverter {
       case DateType => p.DataType.Kind.Date(p.DataType.Date())
       case TimestampType => p.DataType.Kind.Timestamp(p.DataType.Timestamp())
       case TimestampNTZType => p.DataType.Kind.TimestampNtz(p.DataType.TimestampNTZ())
+      case TimeType(precision) => p.DataType.Kind.Time(p.DataType.Time(precision = Some(precision)))
+      case TimestampNTZNanosType(precision) =>
+        p.DataType.Kind.TimestampNtzNanos(p.DataType.TimestampNTZNanos(precision = Some(precision)))
+      case TimestampLTZNanosType(precision) =>
+        p.DataType.Kind.TimestampLtzNanos(p.DataType.TimestampLTZNanos(precision = Some(precision)))
+      case GeometryType(srid) => p.DataType.Kind.Geometry(p.DataType.Geometry(srid = srid))
+      case GeographyType(srid) => p.DataType.Kind.Geography(p.DataType.Geography(srid = srid))
       case CalendarIntervalType =>
         p.DataType.Kind.CalendarInterval(p.DataType.CalendarInterval())
       case VariantType => p.DataType.Kind.Variant(p.DataType.Variant())

@@ -17,8 +17,12 @@
 
 package org.apache.spark.sql.connect.client
 
-import java.util.UUID
+import java.nio.charset.StandardCharsets.UTF_8
+import java.util.{Base64, UUID}
 import java.util.concurrent.TimeUnit
+
+import scala.collection.mutable
+import scala.concurrent.duration.FiniteDuration
 
 import io.grpc.{ManagedChannel, ManagedChannelBuilder, Metadata => GrpcMetadata}
 import io.grpc.stub.MetadataUtils
@@ -29,8 +33,8 @@ import org.apache.spark.connect.proto
  * The low-level client that talks to a Spark Connect server over gRPC.
  *
  * It owns the gRPC channel, the (stable) session id, the user context and the user agent, and
- * exposes the four core RPCs used by the public API: `ExecutePlan`, `AnalyzePlan`, `Config` and
- * `Interrupt`.
+ * exposes the RPCs used by the public API: `ExecutePlan`, `AnalyzePlan`, `Config`, `Interrupt`,
+ * `ReleaseSession`, and `GetStatus`.
  */
 class SparkConnectClient private[sql] (
     private[sql] val configuration: SparkConnectClient.Configuration,
@@ -40,8 +44,25 @@ class SparkConnectClient private[sql] (
   import SparkConnectClient._
 
   private val stub = proto.SparkConnectServiceGrpc.blockingStub(channel)
-  private val retryHandler = new GrpcRetryHandler(configuration.retryPolicies)
-  private lazy val reattachableStub = new GrpcReattachableStub(channel)
+  private val retryHandler = new GrpcRetryHandler(
+    configuration.retryPolicies,
+    Thread.sleep,
+    configuration.maxRetryExceptionElapsedTime
+  )
+  private lazy val reattachableStub = new GrpcReattachableStub(
+    channel,
+    configuration.rpcDeadlines.reattachableExecutePlan,
+    configuration.rpcDeadlines.reattachExecute
+  )
+
+  /**
+   * A stub whose calls are bounded by `deadline`. Built per call: gRPC deadlines are absolute, so
+   * each retry attempt must get a fresh budget.
+   */
+  private def stubWithDeadline(
+      deadline: Option[FiniteDuration]
+  ): proto.SparkConnectServiceGrpc.SparkConnectServiceBlockingStub =
+    deadline.fold(stub)(d => stub.withDeadlineAfter(d.toMillis, TimeUnit.MILLISECONDS))
 
   /** The stable session id shared by all requests issued through this client. */
   val sessionId: String = configuration.sessionId.getOrElse(UUID.randomUUID().toString)
@@ -67,7 +88,7 @@ class SparkConnectClient private[sql] (
   private def fetchErrorDetails(errorId: String): Option[proto.FetchErrorDetailsResponse] =
     try
       Some(
-        stub.fetchErrorDetails(
+        stubWithDeadline(configuration.rpcDeadlines.fetchErrorDetails).fetchErrorDetails(
           proto.FetchErrorDetailsRequest(
             sessionId = sessionId,
             userContext = Some(userContext),
@@ -79,15 +100,55 @@ class SparkConnectClient private[sql] (
     catch { case scala.util.control.NonFatal(_) => None }
 
   // ---------------------------------------------------------------------------
+  // Operation tags
+  // ---------------------------------------------------------------------------
+
+  // Tags are per thread (inherited by child threads as a copy) and attached to every execution.
+  private[this] val tags = new InheritableThreadLocal[mutable.Set[String]] {
+    override def childValue(parent: mutable.Set[String]): mutable.Set[String] = parent.clone()
+    override protected def initialValue(): mutable.Set[String] = new mutable.HashSet[String]()
+  }
+
+  private[sql] def addTag(tag: String): Unit = {
+    throwIfInvalidTag(tag)
+    tags.get += tag
+  }
+
+  private[sql] def removeTag(tag: String): Unit = {
+    throwIfInvalidTag(tag)
+    tags.get -= tag
+  }
+
+  private[sql] def getTags(): Set[String] = tags.get.toSet
+
+  private[sql] def clearTags(): Unit = tags.get.clear()
+
+  // ---------------------------------------------------------------------------
   // ExecutePlan
   // ---------------------------------------------------------------------------
 
-  private[sql] def execute(plan: proto.Plan): Iterator[proto.ExecutePlanResponse] = {
+  /**
+   * Executes `plan`, always sending an operation id (a fresh UUID unless one is given) so the
+   * operation can be interrupted or looked up with [[getOperationStatuses]], and attaching the
+   * thread's operation tags.
+   */
+  private[sql] def execute(
+      plan: proto.Plan,
+      operationId: Option[String] = None
+  ): Iterator[proto.ExecutePlanResponse] = {
+    val resolvedOperationId = operationId.getOrElse(UUID.randomUUID().toString)
+    require(
+      isValidUUID(resolvedOperationId),
+      s"Invalid operationId: $resolvedOperationId. The id must be an UUID string of " +
+        "the format `00112233-4455-6677-8899-aabbccddeeff`"
+    )
     val request = proto.ExecutePlanRequest(
       sessionId = sessionId,
       userContext = Some(userContext),
       plan = Some(plan),
-      clientType = Some(userAgent)
+      clientType = Some(userAgent),
+      operationId = Some(resolvedOperationId),
+      tags = tags.get.toSeq
     )
     val responses =
       if (configuration.useReattachableExecute) {
@@ -95,9 +156,10 @@ class SparkConnectClient private[sql] (
         new ExecutePlanResponseReattachableIterator(request, reattachableStub, retryHandler)
       } else {
         // Non-reattachable: retry only the initial call (safe before any response is consumed).
+        // No deadline here: timing out would kill the execution with no way to resume it.
         retryHandler.retry(stub.executePlan(request))
       }
-    exceptions.convertIterator(responses)
+    exceptions.convertIterator(responses, Some(resolvedOperationId))
   }
 
   // ---------------------------------------------------------------------------
@@ -111,7 +173,11 @@ class SparkConnectClient private[sql] (
       clientType = Some(userAgent),
       analyze = analyze
     )
-    exceptions.convert(retryHandler.retry(stub.analyzePlan(request)))
+    exceptions.convert(
+      retryHandler.retry(
+        stubWithDeadline(configuration.rpcDeadlines.analyzePlan).analyzePlan(request)
+      )
+    )
   }
 
   private[sql] def analyzeSchema(plan: proto.Plan): proto.DataType =
@@ -177,6 +243,15 @@ class SparkConnectClient private[sql] (
       )
     ).getSameSemantics.result
 
+  /**
+   * Parses a DDL-formatted schema or data type string (e.g. `"a INT, b STRING"`) on the server, for
+   * the places where the protocol needs a resolved type rather than a string.
+   */
+  private[sql] def ddlParse(ddl: String): proto.DataType =
+    analyze(
+      proto.AnalyzePlanRequest.Analyze.DdlParse(proto.AnalyzePlanRequest.DDLParse(ddlString = ddl))
+    ).getDdlParse.getParsed
+
   // ---------------------------------------------------------------------------
   // Config
   // ---------------------------------------------------------------------------
@@ -188,7 +263,9 @@ class SparkConnectClient private[sql] (
       clientType = Some(userAgent),
       operation = Some(operation)
     )
-    exceptions.convert(retryHandler.retry(stub.config(request)))
+    exceptions.convert(
+      retryHandler.retry(stubWithDeadline(configuration.rpcDeadlines.config).config(request))
+    )
   }
 
   private[sql] def setConf(key: String, value: String): Unit =
@@ -241,42 +318,131 @@ class SparkConnectClient private[sql] (
       )
     )
 
+  private[sql] def isModifiable(key: String): Boolean = {
+    val response = config(
+      proto.ConfigRequest.Operation(
+        proto.ConfigRequest.Operation.OpType
+          .IsModifiable(proto.ConfigRequest.IsModifiable(keys = Seq(key)))
+      )
+    )
+    response.pairs.headOption.flatMap(_.value).exists(_.toBoolean)
+  }
+
   // ---------------------------------------------------------------------------
-  // Interrupt & lifecycle
+  // Interrupt, status & lifecycle
   // ---------------------------------------------------------------------------
 
-  private[sql] def interruptAll(): Seq[String] = {
+  private def interrupt(
+      interruptType: proto.InterruptRequest.InterruptType,
+      interrupt: proto.InterruptRequest.Interrupt = proto.InterruptRequest.Interrupt.Empty
+  ): Seq[String] = {
     val response = exceptions.convert(
-      stub.interrupt(
+      stubWithDeadline(configuration.rpcDeadlines.interrupt).interrupt(
         proto.InterruptRequest(
           sessionId = sessionId,
           userContext = Some(userContext),
           clientType = Some(userAgent),
-          interruptType = proto.InterruptRequest.InterruptType.INTERRUPT_TYPE_ALL
+          interruptType = interruptType,
+          interrupt = interrupt
         )
       )
     )
     response.interruptedIds
   }
 
-  private[sql] def interruptTag(tag: String): Seq[String] = {
-    val response = exceptions.convert(
-      stub.interrupt(
-        proto.InterruptRequest(
+  private[sql] def interruptAll(): Seq[String] =
+    interrupt(proto.InterruptRequest.InterruptType.INTERRUPT_TYPE_ALL)
+
+  private[sql] def interruptTag(tag: String): Seq[String] =
+    interrupt(
+      proto.InterruptRequest.InterruptType.INTERRUPT_TYPE_TAG,
+      proto.InterruptRequest.Interrupt.OperationTag(tag)
+    )
+
+  private[sql] def interruptOperation(operationId: String): Seq[String] =
+    interrupt(
+      proto.InterruptRequest.InterruptType.INTERRUPT_TYPE_OPERATION_ID,
+      proto.InterruptRequest.Interrupt.OperationId(operationId)
+    )
+
+  /**
+   * Returns the status of operations in this session (Spark 4.2+ servers): of the operations with
+   * the given ids, or of all operations when `operationIds` is empty.
+   *
+   * @param operationIds
+   *   operation ids to report on; empty means all operations in the session.
+   * @param operationExtensions
+   *   per-operation extension messages to include in the request.
+   * @param requestExtensions
+   *   request-level extension messages to include in the request.
+   * @return
+   *   the full `GetStatusResponse`, including `operationStatuses` and any extensions.
+   */
+  def getOperationStatuses(
+      operationIds: Seq[String] = Seq.empty,
+      operationExtensions: Seq[com.google.protobuf.any.Any] = Seq.empty,
+      requestExtensions: Seq[com.google.protobuf.any.Any] = Seq.empty
+  ): proto.GetStatusResponse = {
+    val request = proto.GetStatusRequest(
+      sessionId = sessionId,
+      userContext = Some(userContext),
+      clientType = Some(userAgent),
+      operationStatus = Some(
+        proto.GetStatusRequest.OperationStatusRequest(
+          operationIds = operationIds,
+          extensions = operationExtensions
+        )
+      ),
+      extensions = requestExtensions
+    )
+    exceptions.convert(
+      retryHandler.retry(stubWithDeadline(configuration.rpcDeadlines.getStatus).getStatus(request))
+    )
+  }
+
+  /** Releases the server-side session (its state, caches, and temporary views). */
+  private[sql] def releaseSession(): Unit =
+    exceptions.convert(
+      stubWithDeadline(configuration.rpcDeadlines.releaseSession).releaseSession(
+        proto.ReleaseSessionRequest(
           sessionId = sessionId,
           userContext = Some(userContext),
-          clientType = Some(userAgent),
-          interruptType = proto.InterruptRequest.InterruptType.INTERRUPT_TYPE_TAG,
-          interrupt = proto.InterruptRequest.Interrupt.OperationTag(tag)
+          clientType = Some(userAgent)
         )
       )
     )
-    response.interruptedIds
-  }
 
   /** Returns a new client with its own channel and a fresh session id. */
   private[sql] def copy(): SparkConnectClient =
     configuration.copy(sessionId = None).toSparkConnectClient
+
+  /**
+   * Clones this session on the server (Spark 4.1+), copying its SQL configurations, temporary
+   * views, registered functions, and catalog state into a new independent session, and returns a
+   * client bound to the clone. `newSessionId` must be a UUID when given.
+   */
+  private[sql] def cloneSession(newSessionId: Option[String] = None): SparkConnectClient = {
+    newSessionId.foreach { id =>
+      require(isValidUUID(id), s"Invalid session id: $id. The id must be an UUID string.")
+    }
+    val response = exceptions.convert(
+      stubWithDeadline(configuration.rpcDeadlines.cloneSession).cloneSession(
+        proto.CloneSessionRequest(
+          sessionId = sessionId,
+          userContext = Some(userContext),
+          clientType = Some(userAgent),
+          newSessionId = newSessionId
+        )
+      )
+    )
+    newSessionId.foreach { expected =>
+      require(
+        response.newSessionId == expected,
+        s"Returned session ID '${response.newSessionId}' does not match requested ID '$expected'"
+      )
+    }
+    configuration.copy(sessionId = Some(response.newSessionId)).toSparkConnectClient
+  }
 
   def shutdown(): Unit = {
     // Try a graceful shutdown first so in-flight RPCs can finish and the server can release
@@ -293,8 +459,48 @@ object SparkConnectClient {
 
   def builder(): Builder = new Builder()
 
+  // Same rules as Spark job tags: the Connect tag is part of the server-side job tag.
+  private def throwIfInvalidTag(tag: String): Unit = {
+    if (tag == null) {
+      throw new IllegalArgumentException("Spark Connect tag cannot be null.")
+    }
+    if (tag.contains(",")) {
+      throw new IllegalArgumentException("Spark Connect tag cannot contain ','.")
+    }
+    if (tag.isEmpty) {
+      throw new IllegalArgumentException("Spark Connect tag cannot be an empty string.")
+    }
+  }
+
+  private def isValidUUID(uuid: String): Boolean =
+    try { UUID.fromString(uuid); true }
+    catch { case _: IllegalArgumentException => false }
+
+  /** Carries the operation id of a failed execution on the converted exception. */
+  private final class SparkConnectOperationIdException(val operationId: String)
+      extends RuntimeException(s"Spark Connect operation ID: $operationId", null, false, false)
+
+  /**
+   * Returns the Spark Connect operation id of the execution that raised `error`, if the error was
+   * raised by an `ExecutePlan` call of this client (e.g. to pass to `interruptOperation` or
+   * [[SparkConnectClient.getOperationStatuses]]).
+   */
+  def getOperationId(error: Throwable): Option[String] =
+    error.getSuppressed.collectFirst { case marker: SparkConnectOperationIdException =>
+      marker.operationId
+    }
+
+  private[client] def attachOperationId(error: Throwable, operationId: String): Unit =
+    if (getOperationId(error).isEmpty) {
+      error.addSuppressed(new SparkConnectOperationIdException(operationId))
+    }
+
   /**
    * Immutable connection configuration. Construct via [[Builder]] or [[Builder.connectionString]].
+   *
+   * The keepalive settings make the client send HTTP/2 PINGs so a connection that silently died
+   * (e.g. a NAT gateway dropped it) fails with `UNAVAILABLE` instead of hanging; they default to
+   * Apache Spark 4.3's values (enabled, 60s, 20s, also without calls).
    */
   case class Configuration(
       host: String = "localhost",
@@ -308,13 +514,25 @@ object SparkConnectClient {
       metadata: Map[String, String] = Map.empty,
       maxInboundMessageSize: Int = Configuration.MAX_MESSAGE_SIZE,
       useReattachableExecute: Boolean = true,
-      retryPolicies: Seq[RetryPolicy] = RetryPolicy.defaultPolicies()
+      retryPolicies: Seq[RetryPolicy] = RetryPolicy.defaultPolicies(),
+      rpcDeadlines: RpcDeadlines = RpcDeadlines(),
+      maxRetryExceptionElapsedTime: FiniteDuration =
+        GrpcRetryHandler.DEFAULT_MAX_RETRY_EXCEPTION_ELAPSED_TIME,
+      grpcKeepAliveEnabled: Boolean = Configuration.DEFAULT_GRPC_KEEPALIVE_ENABLED,
+      grpcKeepAliveTimeMs: Long = Configuration.DEFAULT_GRPC_KEEPALIVE_TIME_MS,
+      grpcKeepAliveTimeoutMs: Long = Configuration.DEFAULT_GRPC_KEEPALIVE_TIMEOUT_MS,
+      grpcKeepAliveWithoutCalls: Boolean = Configuration.DEFAULT_GRPC_KEEPALIVE_WITHOUT_CALLS
   ) {
 
     def toChannel: ManagedChannel = {
       val builder = ManagedChannelBuilder.forAddress(host, port)
       if (useSsl || token.isDefined) builder.useTransportSecurity() else builder.usePlaintext()
       builder.maxInboundMessageSize(maxInboundMessageSize)
+      if (grpcKeepAliveEnabled) {
+        builder.keepAliveTime(grpcKeepAliveTimeMs, TimeUnit.MILLISECONDS)
+        builder.keepAliveTimeout(grpcKeepAliveTimeoutMs, TimeUnit.MILLISECONDS)
+        builder.keepAliveWithoutCalls(grpcKeepAliveWithoutCalls)
+      }
 
       val headers = new GrpcMetadata()
       token.foreach { t =>
@@ -324,7 +542,15 @@ object SparkConnectClient {
         )
       }
       metadata.foreach { case (k, v) =>
-        headers.put(GrpcMetadata.Key.of(k, GrpcMetadata.ASCII_STRING_MARSHALLER), v)
+        if (k.endsWith(GrpcMetadata.BINARY_HEADER_SUFFIX)) {
+          // Binary ("-bin") headers carry base64-encoded bytes, as in Apache Spark.
+          headers.put(
+            GrpcMetadata.Key.of(k, GrpcMetadata.BINARY_BYTE_MARSHALLER),
+            Base64.getDecoder.decode(v.getBytes(UTF_8))
+          )
+        } else {
+          headers.put(GrpcMetadata.Key.of(k, GrpcMetadata.ASCII_STRING_MARSHALLER), v)
+        }
       }
       if (!headers.keys().isEmpty) {
         builder.intercept(MetadataUtils.newAttachHeadersInterceptor(headers))
@@ -340,6 +566,10 @@ object SparkConnectClient {
     val MAX_MESSAGE_SIZE: Int = 128 * 1024 * 1024
     val DEFAULT_USER_AGENT: String =
       sys.env.getOrElse("SPARK_CONNECT_USER_AGENT", "spark-connect-scala3")
+    val DEFAULT_GRPC_KEEPALIVE_ENABLED: Boolean = true
+    val DEFAULT_GRPC_KEEPALIVE_TIME_MS: Long = 60 * 1000L
+    val DEFAULT_GRPC_KEEPALIVE_TIMEOUT_MS: Long = 20 * 1000L
+    val DEFAULT_GRPC_KEEPALIVE_WITHOUT_CALLS: Boolean = true
   }
 
   /** Fluent builder for a [[SparkConnectClient]]. */
@@ -392,6 +622,50 @@ object SparkConnectClient {
       configuration = configuration.copy(useReattachableExecute = enabled)
       this
     }
+
+    /** Sets the per-RPC deadlines; use [[RpcDeadlines.disabled]] to turn them all off. */
+    def rpcDeadlines(deadlines: RpcDeadlines): Builder = {
+      configuration = configuration.copy(rpcDeadlines = deadlines)
+      this
+    }
+
+    /** Bounds the total time spent resuming an execution that keeps needing to reattach. */
+    def maxRetryExceptionElapsedTime(duration: FiniteDuration): Builder = {
+      configuration = configuration.copy(maxRetryExceptionElapsedTime = duration)
+      this
+    }
+
+    /** Whether to send gRPC/HTTP2 keepalive PINGs to detect a silently-dead connection. */
+    def grpcKeepAliveEnabled(enabled: Boolean): Builder = {
+      configuration = configuration.copy(grpcKeepAliveEnabled = enabled)
+      this
+    }
+
+    def grpcKeepAliveEnabled: Boolean = configuration.grpcKeepAliveEnabled
+
+    /** Idle time before sending a keepalive PING, in milliseconds. */
+    def grpcKeepAliveTimeMs(timeMs: Long): Builder = {
+      configuration = configuration.copy(grpcKeepAliveTimeMs = timeMs)
+      this
+    }
+
+    def grpcKeepAliveTimeMs: Long = configuration.grpcKeepAliveTimeMs
+
+    /** Time to wait for a keepalive PING acknowledgement before failing, in milliseconds. */
+    def grpcKeepAliveTimeoutMs(timeoutMs: Long): Builder = {
+      configuration = configuration.copy(grpcKeepAliveTimeoutMs = timeoutMs)
+      this
+    }
+
+    def grpcKeepAliveTimeoutMs: Long = configuration.grpcKeepAliveTimeoutMs
+
+    /** Whether to keep sending keepalive PINGs while there are no in-flight RPCs. */
+    def grpcKeepAliveWithoutCalls(enabled: Boolean): Builder = {
+      configuration = configuration.copy(grpcKeepAliveWithoutCalls = enabled)
+      this
+    }
+
+    def grpcKeepAliveWithoutCalls: Boolean = configuration.grpcKeepAliveWithoutCalls
 
     def option(key: String, value: String): Builder = {
       configuration = configuration.copy(metadata = configuration.metadata + (key -> value))
@@ -462,6 +736,12 @@ object SparkConnectClient {
       case ("session_id", v) => config = config.copy(sessionId = Option(v))
       case ("grpc_max_message_size", v) =>
         config = config.copy(maxInboundMessageSize = v.toInt)
+      case ("grpc_keepalive_enabled", v) => config = config.copy(grpcKeepAliveEnabled = v.toBoolean)
+      case ("grpc_keepalive_time_ms", v) => config = config.copy(grpcKeepAliveTimeMs = v.toLong)
+      case ("grpc_keepalive_timeout_ms", v) =>
+        config = config.copy(grpcKeepAliveTimeoutMs = v.toLong)
+      case ("grpc_keepalive_without_calls", v) =>
+        config = config.copy(grpcKeepAliveWithoutCalls = v.toBoolean)
       case (k, v) => config = config.copy(metadata = config.metadata + (k -> v))
     }
     config

@@ -47,6 +47,9 @@ class StreamingQuery private[sql] (
   private val instanceId: proto.StreamingQueryInstanceId =
     proto.StreamingQueryInstanceId(id = id, runId = runId)
 
+  /** The session this query was started from. */
+  def sparkSession: SparkSession = spark
+
   /** Returns whether the query is currently active (still running). */
   def isActive: Boolean = command(_.withStatus(true)).getStatus.isActive
 

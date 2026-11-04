@@ -68,13 +68,13 @@ See the [Installation guide](https://hyukjinkwon.github.io/spark-connect-scala3/
 
 ## Starting a Spark Connect server
 
-You need a reachable Spark Connect server. The client is built and tested against **Apache Spark 4.0.x and 4.1.x** (latest 4.1.2); the protobufs are sourced from Spark 4.1.2.
+You need a reachable Spark Connect server. The client speaks the **Spark Connect 4.3.0 protocol** (the protobufs are sourced from Apache Spark 4.3.0) and is tested against Apache Spark 3.5.x, 4.0.x, 4.1.x, 4.2.x, and 4.3.x. An API that Apache Spark added in a given release needs a server at least that new; see [Version compatibility](https://hyukjinkwon.github.io/spark-connect-scala3/troubleshooting/#version-compatibility).
 
 ```bash
-# Download a Spark distribution (4.1.2 shown here).
-curl -L https://archive.apache.org/dist/spark/spark-4.1.2/spark-4.1.2-bin-hadoop3.tgz -o spark.tgz
+# Download a Spark distribution (4.3.0 shown here).
+curl -L https://archive.apache.org/dist/spark/spark-4.3.0/spark-4.3.0-bin-hadoop3.tgz -o spark.tgz
 tar xzf spark.tgz
-cd spark-4.1.2-bin-hadoop3
+cd spark-4.3.0-bin-hadoop3
 
 # Start the Connect server (requires Java 17+).
 # Spark 4.0+ bundles the Connect server, so no extra packages are needed.
@@ -86,7 +86,7 @@ The server listens on `sc://localhost:15002` by default.
 On **Spark 3.5.x** the Connect server is not bundled. Use a Scala 2.13 distribution and pull the server in explicitly:
 
 ```bash
-./sbin/start-connect-server.sh --packages "org.apache.spark:spark-connect_2.13:3.5.5"
+./sbin/start-connect-server.sh --packages "org.apache.spark:spark-connect_2.13:3.5.9"
 ```
 
 ## Interactive shell
@@ -120,7 +120,10 @@ existing Spark Scala code ports almost verbatim. Results decode through Apache
 Arrow into ordered, name-addressable `Row`s.
 
 It also includes typed Datasets: `df.as[T]` and `spark.createDataset(values)` for
-case classes, tuples, primitives, `Option`, collections, and maps. The encoders run
+case classes, tuples, primitives, `Option`, collections, and maps, a typed
+`spark.range` (`Dataset[java.lang.Long]`), typed `select(col.as[T], ...)`,
+`joinWith`, typed catalog listings, and every relational operator that keeps the
+element type (`filter`, `orderBy`, `limit`, `union`, `tail`, ...). The encoders run
 entirely on the client, so no closure is sent to the server.
 
 ### Plugin extensions
@@ -146,16 +149,19 @@ same mechanism as a UDF), which Spark Connect for Scala 3 does not provide:
 
 Also out of scope because they are not part of the Spark Connect protocol at all:
 
-- The RDD API (`Dataset.rdd`, `SparkContext`, accumulators, broadcast variables).
+- The RDD API (`Dataset.rdd`, `SparkContext`, accumulators, broadcast variables)
+  and other in-process JVM state (`queryExecution`, `sessionState`).
 - The MLlib-over-Connect surface.
+- Artifact upload (`addArtifact(s)`), which only matters for shipping UDF code.
 
 Class and method names otherwise match Apache Spark's Scala API, so existing Spark
 Scala code ports almost verbatim.
 
-The untyped `DataFrame` surface is complete, and typed Datasets (`as[T]`,
-`createDataset`, `Encoder` derivation) are supported. The closure-driven typed
-operations (`map`/`flatMap`/`reduce`, `groupByKey` / `KeyValueGroupedDataset`,
-typed aggregators) and a few niche APIs are not implemented. See
+The API follows Apache Spark 4.3.0's Scala Spark Connect client, including every
+built-in function except `udf`/`udaf`, the typed `Dataset[T]` operators that need
+no closure, and the catalog, streaming, and SQL additions of Spark 4.2 and 4.3.
+The closure-driven typed operations (`map`/`flatMap`/`reduce`, `groupByKey` /
+`KeyValueGroupedDataset`, typed aggregators) are not implemented. See
 [API coverage](https://hyukjinkwon.github.io/spark-connect-scala3/api-coverage/)
 for the exact breakdown.
 

@@ -44,4 +44,10 @@ class RuntimeConfig private[sql] (client: SparkConnectClient) {
 
   /** Resets the given configuration property to its default value. */
   def unset(key: String): Unit = client.unsetConf(key)
+
+  /**
+   * Returns whether the configuration property can be set at runtime (it is a non-static SQL
+   * configuration).
+   */
+  def isModifiable(key: String): Boolean = client.isModifiable(key)
 }

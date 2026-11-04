@@ -18,11 +18,12 @@
 package org.apache.spark.sql.connect.client
 
 import java.util.UUID
-import java.util.concurrent.{Executors, ThreadFactory}
+import java.util.concurrent.{Executors, ThreadFactory, TimeUnit}
 
+import scala.concurrent.duration.FiniteDuration
 import scala.util.control.NonFatal
 
-import io.grpc.{Channel, StatusRuntimeException}
+import io.grpc.{Channel, Status, StatusRuntimeException}
 
 import org.apache.spark.connect.proto
 import org.apache.spark.sql.connect.client.GrpcRetryHandler.RetryException
@@ -42,15 +43,30 @@ private[sql] trait ReattachableStub {
   def releaseExecute(request: proto.ReleaseExecuteRequest): proto.ReleaseExecuteResponse
 }
 
-/** Real [[ReattachableStub]] backed by the raw blocking gRPC stub (no retry/conversion). */
-private[sql] class GrpcReattachableStub(channel: Channel) extends ReattachableStub {
+/**
+ * The production [[ReattachableStub]], backed by the raw blocking gRPC stub (no retry or error
+ * conversion). Each `ExecutePlan` / `ReattachExecute` call gets a fresh per-RPC deadline (see
+ * [[RpcDeadlines]]): gRPC deadlines are absolute, so a shared deadline-bound stub would let later
+ * stream segments inherit an already-elapsed deadline.
+ */
+private[sql] class GrpcReattachableStub(
+    channel: Channel,
+    executePlanDeadline: Option[FiniteDuration] = None,
+    reattachExecuteDeadline: Option[FiniteDuration] = None
+) extends ReattachableStub {
   private val stub = proto.SparkConnectServiceGrpc.blockingStub(channel)
+
+  private def withDeadline(
+      deadline: Option[FiniteDuration]
+  ): proto.SparkConnectServiceGrpc.SparkConnectServiceBlockingStub =
+    deadline.fold(stub)(d => stub.withDeadlineAfter(d.toMillis, TimeUnit.MILLISECONDS))
+
   override def executePlan(r: proto.ExecutePlanRequest): Iterator[proto.ExecutePlanResponse] =
-    stub.executePlan(r)
+    withDeadline(executePlanDeadline).executePlan(r)
   override def reattachExecute(
       r: proto.ReattachExecuteRequest
   ): Iterator[proto.ExecutePlanResponse] =
-    stub.reattachExecute(r)
+    withDeadline(reattachExecuteDeadline).reattachExecute(r)
   override def releaseExecute(r: proto.ReleaseExecuteRequest): proto.ReleaseExecuteResponse =
     stub.releaseExecute(r)
 }
@@ -183,6 +199,14 @@ private[sql] class ExecutePlanResponseReattachableIterator(
           )
         }
         iter = Some(stub.executePlan(initialRequest))
+        val error = new RetryException()
+        error.addSuppressed(ex)
+        throw error
+      case ex: StatusRuntimeException if ex.getStatus.getCode == Status.Code.DEADLINE_EXCEEDED =>
+        // The per-RPC deadline of this stream segment fired. The server-side operation is still
+        // alive, so drop the stream and raise RetryException: the retry loop then opens a fresh
+        // ReattachExecute stream (with a new deadline) and resumes from the last response.
+        iter = None
         val error = new RetryException()
         error.addSuppressed(ex)
         throw error

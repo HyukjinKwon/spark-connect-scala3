@@ -143,6 +143,10 @@ class DataFrameStatFunctions private[sql] (df: Dataset[?]) {
    */
   def freqItems(cols: Seq[String]): DataFrame = freqItems(cols, 0.01)
 
+  def freqItems(cols: Array[String]): DataFrame = freqItems(cols.toSeq, 0.01)
+
+  def freqItems(cols: Array[String], support: Double): DataFrame = freqItems(cols.toSeq, support)
+
   /**
    * Finds frequent items for the given columns.
    *
@@ -170,7 +174,28 @@ class DataFrameStatFunctions private[sql] (df: Dataset[?]) {
    * @return
    *   a [[Dataset]] containing the stratified sample.
    */
-  def sampleBy[T](col: String, fractions: Map[T, Double], seed: Long): DataFrame = {
+  def sampleBy[T](col: String, fractions: Map[T, Double], seed: Long): DataFrame =
+    sampleBy(Column.fromName(col), fractions, seed)
+
+  /** (Java-specific) Stratified sampling of `col` by `fractions`. */
+  def sampleBy[T](
+      col: String,
+      fractions: java.util.Map[T, java.lang.Double],
+      seed: Long
+  ): DataFrame = sampleBy(Column.fromName(col), fractions, seed)
+
+  /** (Java-specific) Stratified sampling of `col` by `fractions`. */
+  def sampleBy[T](
+      col: Column,
+      fractions: java.util.Map[T, java.lang.Double],
+      seed: Long
+  ): DataFrame = {
+    import scala.jdk.CollectionConverters._
+    sampleBy(col, fractions.asScala.toMap.map { case (k, v) => k -> v.doubleValue }, seed)
+  }
+
+  /** Stratified sampling of `col` without replacement, by the fraction of each stratum. */
+  def sampleBy[T](col: Column, fractions: Map[T, Double], seed: Long): DataFrame = {
     val protoFractions = fractions.toSeq.map { case (stratum, fraction) =>
       proto.StatSampleBy.Fraction(
         stratum = Some(Column.lit(stratum).expr.getLiteral),
@@ -181,7 +206,7 @@ class DataFrameStatFunctions private[sql] (df: Dataset[?]) {
       proto.Relation.RelType.SampleBy(
         proto.StatSampleBy(
           input = Some(df.relation),
-          col = Some(Column.fromName(col).expr),
+          col = Some(col.expr),
           fractions = protoFractions,
           seed = Some(seed)
         )
@@ -199,6 +224,17 @@ class DataFrameStatFunctions private[sql] (df: Dataset[?]) {
   def countMinSketch(colName: String, eps: Double, confidence: Double, seed: Int): CountMinSketch =
     countMinSketch(Column.fromName(colName), eps, confidence, seed)
 
+  /** Builds a Count-min Sketch of `colName` with the given depth and width. */
+  def countMinSketch(colName: String, depth: Int, width: Int, seed: Int): CountMinSketch =
+    countMinSketch(Column.fromName(colName), depth, width, seed)
+
+  /** Builds a Count-min Sketch of `col` with the given depth and width. */
+  def countMinSketch(col: Column, depth: Int, width: Int, seed: Int): CountMinSketch = {
+    val eps = 2.0 / width
+    val confidence = 1 - 1 / Math.pow(2, depth)
+    countMinSketch(col, eps, confidence, seed)
+  }
+
   /** Builds a Count-Min Sketch over the given column. */
   def countMinSketch(col: Column, eps: Double, confidence: Double, seed: Int): CountMinSketch = {
     val agg =
@@ -215,23 +251,16 @@ class DataFrameStatFunctions private[sql] (df: Dataset[?]) {
 
   /** Builds a Bloom filter over the given column for `expectedNumItems` and target `fpp`. */
   def bloomFilter(col: Column, expectedNumItems: Long, fpp: Double): BloomFilter =
-    bloomFilterWithNumBits(
-      col,
-      expectedNumItems,
-      BloomFilter.optimalNumOfBits(expectedNumItems, fpp)
-    )
+    bloomFilter(col, expectedNumItems, BloomFilter.optimalNumOfBits(expectedNumItems, fpp))
 
   /** Builds a Bloom filter over the given column with an explicit number of bits. */
   def bloomFilter(colName: String, expectedNumItems: Long, numBits: Long): BloomFilter =
-    bloomFilterWithNumBits(Column.fromName(colName), expectedNumItems, numBits)
+    bloomFilter(Column.fromName(colName), expectedNumItems, numBits)
 
-  private def bloomFilterWithNumBits(
-      col: Column,
-      expectedNumItems: Long,
-      numBits: Long
-  ): BloomFilter = {
+  /** Builds a Bloom filter over `col` with `numBits` bits for `expectedNumItems` items. */
+  def bloomFilter(col: Column, expectedNumItems: Long, numBits: Long): BloomFilter = {
     val agg =
-      Column.fn("bloom_filter_agg", col, Column.lit(expectedNumItems), Column.lit(numBits))
+      Column.internalFn("bloom_filter_agg", col, Column.lit(expectedNumItems), Column.lit(numBits))
     BloomFilter.readFrom(new ByteArrayInputStream(aggBytes(agg)))
   }
 

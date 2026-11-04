@@ -55,22 +55,25 @@ jobs:
         # Pinned to the latest patch of each line, which the Apache CDN (dlcdn)
         # actively hosts. Older patches live only on the throttled archive mirror
         # and time out the 390 MB download in CI, so we always track the current
-        # patch: 3.5.x, 4.0.x, 4.1.x, 4.2.x.
+        # patch: 3.5.x, 4.0.x, 4.1.x, 4.2.x, 4.3.x.
         include:
           # Spark 3.5.x does not bundle the Connect server: use the Scala 2.13
           # distribution and pull the server in with --packages.
-          - spark: "3.5.8"
-            tarball: "spark-3.5.8-bin-hadoop3-scala2.13.tgz"
-            packages: "--packages org.apache.spark:spark-connect_2.13:3.5.8"
+          - spark: "3.5.9"
+            tarball: "spark-3.5.9-bin-hadoop3-scala2.13.tgz"
+            packages: "--packages org.apache.spark:spark-connect_2.13:3.5.9"
           # Spark 4.0+ bundles the Connect server; the default tarball works.
-          - spark: "4.0.3"
-            tarball: "spark-4.0.3-bin-hadoop3.tgz"
+          - spark: "4.0.5"
+            tarball: "spark-4.0.5-bin-hadoop3.tgz"
             packages: ""
-          - spark: "4.1.2"
-            tarball: "spark-4.1.2-bin-hadoop3.tgz"
+          - spark: "4.1.4"
+            tarball: "spark-4.1.4-bin-hadoop3.tgz"
             packages: ""
-          - spark: "4.2.0"
-            tarball: "spark-4.2.0-bin-hadoop3.tgz"
+          - spark: "4.2.1"
+            tarball: "spark-4.2.1-bin-hadoop3.tgz"
+            packages: ""
+          - spark: "4.3.0"
+            tarball: "spark-4.3.0-bin-hadoop3.tgz"
             packages: ""
     steps:
       - uses: actions/checkout@v4
