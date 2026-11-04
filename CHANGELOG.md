@@ -3,7 +3,7 @@
 All notable changes to this project are documented in this file. The format is
 based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
-## [Unreleased]
+## [0.4.0] - 2026-11-04
 
 Brings the client to parity with the Scala Spark Connect client of Apache Spark
 4.3.0. Plans built for the same calls are checked against the ones Apache Spark
