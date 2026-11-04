@@ -32,9 +32,12 @@ import org.apache.spark.sql.types._
  */
 class SQLImplicits private[sql] (session: SparkSession) {
 
-  /** Converts a `$"col name"` string interpolation into a [[Column]]. */
+  /**
+   * Converts a `$"col name"` string interpolation into a [[ColumnName]] (a [[Column]] that can also
+   * build a schema field, e.g. `$"age".int`).
+   */
   implicit class StringToColumn(val sc: StringContext) {
-    def $(args: Any*): Column = functions.col(sc.s(args: _*))
+    def $(args: Any*): ColumnName = new ColumnName(sc.s(args*))
   }
 
   /** Adds `.toDF` to a local sequence of values, tuples, or case classes. */

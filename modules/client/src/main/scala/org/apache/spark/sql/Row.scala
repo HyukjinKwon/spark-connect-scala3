@@ -63,7 +63,15 @@ trait Row extends Serializable {
     getSeq[T](i).asJava
   }
   def getMap[K, V](i: Int): scala.collection.Map[K, V] = getAs[scala.collection.Map[K, V]](i)
+  def getJavaMap[K, V](i: Int): java.util.Map[K, V] = {
+    import scala.jdk.CollectionConverters._
+    getMap[K, V](i).asJava
+  }
   def getStruct(i: Int): Row = getAs[Row](i)
+  def getGeometry(i: Int): org.apache.spark.sql.types.Geometry =
+    getAs[org.apache.spark.sql.types.Geometry](i)
+  def getGeography(i: Int): org.apache.spark.sql.types.Geography =
+    getAs[org.apache.spark.sql.types.Geography](i)
 
   /** Returns the value at position `i` cast to the expected type. */
   def getAs[T](i: Int): T = get(i).asInstanceOf[T]
@@ -109,6 +117,12 @@ trait Row extends Serializable {
 
   override def toString: String = this.mkString("[", ",", "]")
 
+  /** The compact JSON representation of this row (requires a schema). */
+  def json: String = RowJson.render(this, pretty = false)
+
+  /** The pretty-printed JSON representation of this row (requires a schema). */
+  def prettyJson: String = RowJson.render(this, pretty = true)
+
   override def equals(o: Any): Boolean = o match {
     case that: Row =>
       if (that.length != this.length) false
@@ -134,6 +148,109 @@ object Row {
 
   /** Extractor so callers can pattern-match on a Row's values. */
   def unapplySeq(row: Row): Some[Seq[Any]] = Some(row.toSeq)
+
+  /** Creates a Row from the elements of a tuple (or any product). */
+  def fromTuple(tuple: Product): Row = fromSeq(tuple.productIterator.toSeq)
+
+  /** Merges multiple rows into a single row, one after another. */
+  @deprecated("This method is deprecated and will be removed in future versions.", "3.0.0")
+  def merge(rows: Row*): Row = new GenericRow(rows.flatMap(_.toSeq).toArray)
+}
+
+/** JSON rendering of rows, following the conventions of `Row.json` in Apache Spark. */
+private object RowJson {
+  import org.apache.spark.sql.types._
+
+  def render(row: Row, pretty: Boolean): String = {
+    require(row.schema != null, "JSON serialization requires a non-null schema.")
+    val sb = new StringBuilder
+    struct(sb, row, row.schema, pretty, 0)
+    sb.toString
+  }
+
+  private def newline(sb: StringBuilder, pretty: Boolean, depth: Int): Unit =
+    if (pretty) sb.append('\n').append("  " * depth)
+
+  private def struct(sb: StringBuilder, r: Row, s: StructType, pretty: Boolean, d: Int): Unit = {
+    sb.append('{')
+    s.fields.zipWithIndex.foreach { case (f, i) =>
+      if (i > 0) sb.append(',')
+      newline(sb, pretty, d + 1)
+      quote(sb, f.name)
+      sb.append(if (pretty) " : " else ":")
+      value(sb, r.get(i), f.dataType, pretty, d + 1)
+    }
+    if (s.fields.nonEmpty) newline(sb, pretty, d)
+    sb.append('}')
+  }
+
+  private def value(sb: StringBuilder, v: Any, dt: DataType, pretty: Boolean, d: Int): Unit =
+    (v, dt) match {
+      case (null, _) => sb.append("null")
+      case (b: Boolean, _) => sb.append(b)
+      case (n: java.lang.Number, _: DecimalType) => sb.append(n.toString)
+      case (n: BigDecimal, _) => sb.append(n.bigDecimal.toPlainString)
+      case (n: java.math.BigDecimal, _) => sb.append(n.toPlainString)
+      case (n: Float, _) if n.isNaN || n.isInfinite => quote(sb, n.toString)
+      case (n: Double, _) if n.isNaN || n.isInfinite => quote(sb, n.toString)
+      case (n: java.lang.Number, _) => sb.append(n.toString)
+      case (b: Array[Byte], _) => quote(sb, java.util.Base64.getEncoder.encodeToString(b))
+      case (r: Row, s: StructType) => struct(sb, r, s, pretty, d)
+      case (m: scala.collection.Map[?, ?], MapType(StringType, vt, _)) =>
+        sb.append('{')
+        m.toSeq.zipWithIndex.foreach { case ((k, mv), i) =>
+          if (i > 0) sb.append(',')
+          quote(sb, String.valueOf(k))
+          sb.append(':')
+          value(sb, mv, vt, pretty, d)
+        }
+        sb.append('}')
+      case (m: scala.collection.Map[?, ?], MapType(kt, vt, _)) =>
+        sb.append('[')
+        m.toSeq.zipWithIndex.foreach { case ((k, mv), i) =>
+          if (i > 0) sb.append(',')
+          sb.append("{\"key\":")
+          value(sb, k, kt, pretty, d)
+          sb.append(",\"value\":")
+          value(sb, mv, vt, pretty, d)
+          sb.append('}')
+        }
+        sb.append(']')
+      case (seq: scala.collection.Seq[?], ArrayType(et, _)) => array(sb, seq, et, pretty, d)
+      case (arr: Array[?], ArrayType(et, _)) => array(sb, arr.toSeq, et, pretty, d)
+      case (other, _) => quote(sb, other.toString)
+    }
+
+  private def array(
+      sb: StringBuilder,
+      seq: scala.collection.Seq[?],
+      et: DataType,
+      pretty: Boolean,
+      d: Int
+  ): Unit = {
+    sb.append('[')
+    seq.zipWithIndex.foreach { case (e, i) =>
+      if (i > 0) sb.append(',')
+      value(sb, e, et, pretty, d)
+    }
+    sb.append(']')
+  }
+
+  private def quote(sb: StringBuilder, s: String): Unit = {
+    sb.append('"')
+    s.foreach {
+      case '"' => sb.append("\\\"")
+      case '\\' => sb.append("\\\\")
+      case '\n' => sb.append("\\n")
+      case '\r' => sb.append("\\r")
+      case '\t' => sb.append("\\t")
+      case '\b' => sb.append("\\b")
+      case '\f' => sb.append("\\f")
+      case c if c < ' ' => sb.append("\\u%04x".format(c.toInt))
+      case c => sb.append(c)
+    }
+    sb.append('"')
+  }
 }
 
 /** A [[Row]] backed by an `Array[Any]`. */

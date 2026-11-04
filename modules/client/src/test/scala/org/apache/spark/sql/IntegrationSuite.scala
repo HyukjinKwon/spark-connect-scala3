@@ -175,7 +175,7 @@ class IntegrationSuite extends munit.FunSuite {
   test("range + filter + collect") {
     val rows = spark.range(10).filter(col("id") % 2 === 0).collect()
     assertEquals(rows.length, 5)
-    assertEquals(rows.map(_.getLong(0)).toSeq, Seq(0L, 2L, 4L, 6L, 8L))
+    assertEquals(rows.map(_.longValue).toSeq, Seq(0L, 2L, 4L, 6L, 8L))
   }
 
   test("select with expressions") {
@@ -306,7 +306,7 @@ class IntegrationSuite extends munit.FunSuite {
   test("catalog lists tables and reports existence") {
     spark.range(5).createOrReplaceTempView("scs3_cat_view")
     assert(spark.catalog.tableExists("scs3_cat_view"))
-    assert(spark.catalog.listTables().collect().exists(_.getString(0) == "scs3_cat_view"))
+    assert(spark.catalog.listTables().collect().exists(_.name == "scs3_cat_view"))
     assertEquals(spark.table("scs3_cat_view").count(), 5L)
     assert(spark.catalog.currentDatabase.nonEmpty)
   }

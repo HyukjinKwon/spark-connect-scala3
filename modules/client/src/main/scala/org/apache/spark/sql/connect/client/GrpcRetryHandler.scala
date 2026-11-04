@@ -17,31 +17,54 @@
 
 package org.apache.spark.sql.connect.client
 
+import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.util.control.NonFatal
 
 /**
  * Retries a function with exponential backoff according to the configured [[RetryPolicy]]s. Ported
  * from Apache Spark's `org.apache.spark.sql.connect.client.GrpcRetryHandler`.
+ *
+ * @param maxRetryExceptionElapsedTime
+ *   the maximum cumulative wall-clock time to keep retrying a [[GrpcRetryHandler.RetryException]]
+ *   (which is otherwise retried unconditionally, without consulting any [[RetryPolicy]]) before
+ *   giving up, measured from the first such exception seen by one retry loop.
  */
 private[sql] class GrpcRetryHandler(
     private val policies: Seq[RetryPolicy],
-    private val sleep: Long => Unit = Thread.sleep
+    private val sleep: Long => Unit = Thread.sleep,
+    private val maxRetryExceptionElapsedTime: FiniteDuration =
+      GrpcRetryHandler.DEFAULT_MAX_RETRY_EXCEPTION_ELAPSED_TIME,
+    private val nowNanos: () => Long = () => System.nanoTime()
 ) {
 
   def this(policy: RetryPolicy, sleep: Long => Unit) = this(List(policy), sleep)
   def this(policy: RetryPolicy) = this(policy, Thread.sleep)
 
   /** Retries `fn` with exponential backoff per the client's retry policies. */
-  def retry[T](fn: => T): T = new GrpcRetryHandler.Retrying(policies, sleep, fn).retry()
+  def retry[T](fn: => T): T =
+    new GrpcRetryHandler.Retrying(policies, sleep, fn, maxRetryExceptionElapsedTime, nowNanos)
+      .retry()
 }
 
 private[sql] object GrpcRetryHandler {
 
+  /** Default cumulative bound for RetryException-driven retries (matches Apache Spark 4.3). */
+  val DEFAULT_MAX_RETRY_EXCEPTION_ELAPSED_TIME: FiniteDuration = 1.hour
+
   /** Manages the retrying state for a single retryable block. */
-  class Retrying[T](retryPolicies: Seq[RetryPolicy], sleep: Long => Unit, fn: => T) {
+  class Retrying[T](
+      retryPolicies: Seq[RetryPolicy],
+      sleep: Long => Unit,
+      fn: => T,
+      maxRetryExceptionElapsedTime: FiniteDuration = DEFAULT_MAX_RETRY_EXCEPTION_ELAPSED_TIME,
+      nowNanos: () => Long = () => System.nanoTime()
+  ) {
     private var currentRetryNum: Int = 0
     private var exceptionList: Seq[Throwable] = Seq.empty
     private val policies: Seq[RetryPolicy.RetryPolicyState] = retryPolicies.map(_.toState)
+
+    // Set when the first RetryException is observed; bounds the time spent in such retries.
+    private var retryExceptionStartNanos: Option[Long] = None
 
     def canRetry(throwable: Throwable): Boolean =
       throwable.isInstanceOf[RetryException] || policies.exists(_.canRetry(throwable))
@@ -58,8 +81,20 @@ private[sql] object GrpcRetryHandler {
     def waitAfterAttempt(): Unit = {
       val lastException = exceptionList.head
 
-      // A RetryException is always retriable, with no backoff and no policy needed.
-      if (lastException.isInstanceOf[RetryException]) return
+      if (lastException.isInstanceOf[RetryException]) {
+        // A RetryException is retried immediately without consulting any policy, as long as the
+        // cumulative time spent on such retries stays within maxRetryExceptionElapsedTime.
+        val start = retryExceptionStartNanos.getOrElse {
+          val now = nowNanos()
+          retryExceptionStartNanos = Some(now)
+          now
+        }
+        if (nowNanos() - start >= maxRetryExceptionElapsedTime.toNanos) {
+          // Surface the underlying cause (attached via addSuppressed) rather than the marker.
+          throw lastException.getSuppressed.headOption.getOrElse(lastException)
+        }
+        return
+      }
 
       val matchedPolicyOpt = policies.find(_.canRetry(lastException))
       if (matchedPolicyOpt.isDefined) {

@@ -48,6 +48,14 @@ class DataFrameNaFunctions private[sql] (df: Dataset[?]) {
    */
   def drop(minNonNulls: Int): DataFrame = buildDrop(Seq.empty, Some(minNonNulls))
 
+  def drop(cols: Array[String]): DataFrame = drop(cols.toSeq)
+
+  def drop(how: String, cols: Array[String]): DataFrame = drop(how, cols.toSeq)
+
+  def drop(minNonNulls: Int, cols: Array[String]): DataFrame = drop(minNonNulls, cols.toSeq)
+
+  def drop(minNonNulls: Int, cols: Seq[String]): DataFrame = buildDrop(cols, Some(minNonNulls))
+
   /**
    * Returns a new [[Dataset]] that drops rows containing any null values in the given columns.
    */
@@ -108,6 +116,20 @@ class DataFrameNaFunctions private[sql] (df: Dataset[?]) {
   def fill(valueMap: Map[String, Any]): DataFrame =
     buildFill(valueMap.keys.toSeq, valueMap.values.toSeq)
 
+  /** (Java-specific) Replaces nulls in each column of the map with the mapped value. */
+  def fill(valueMap: java.util.Map[String, Any]): DataFrame = {
+    import scala.jdk.CollectionConverters._
+    fill(valueMap.asScala.toMap)
+  }
+
+  def fill(value: Long, cols: Array[String]): DataFrame = fill(value, cols.toSeq)
+
+  def fill(value: Double, cols: Array[String]): DataFrame = fill(value, cols.toSeq)
+
+  def fill(value: String, cols: Array[String]): DataFrame = fill(value, cols.toSeq)
+
+  def fill(value: Boolean, cols: Array[String]): DataFrame = fill(value, cols.toSeq)
+
   private def buildFill(cols: Seq[String], values: Seq[Any]): DataFrame =
     df.sparkSession.newDataFrame(
       proto.Relation.RelType.FillNa(
@@ -136,6 +158,18 @@ class DataFrameNaFunctions private[sql] (df: Dataset[?]) {
    */
   def replace[T](cols: Seq[String], replacement: Map[T, T]): DataFrame =
     buildReplace(cols, replacement)
+
+  /** (Java-specific) Replaces values in `col` (`"*"` for all) by the mapped values. */
+  def replace[T](col: String, replacement: java.util.Map[T, T]): DataFrame = {
+    import scala.jdk.CollectionConverters._
+    replace[T](col, replacement.asScala.toMap)
+  }
+
+  /** (Java-specific) Replaces values in the given columns by the mapped values. */
+  def replace[T](cols: Array[String], replacement: java.util.Map[T, T]): DataFrame = {
+    import scala.jdk.CollectionConverters._
+    replace(cols.toSeq, replacement.asScala.toMap)
+  }
 
   private def buildReplace[T](cols: Seq[String], replacement: Map[T, T]): DataFrame = {
     val replacements = replacement.toSeq.map { case (oldValue, newValue) =>

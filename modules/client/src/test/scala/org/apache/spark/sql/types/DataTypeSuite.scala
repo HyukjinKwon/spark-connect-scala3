@@ -38,7 +38,7 @@ class DataTypeSuite extends munit.FunSuite {
     assertEquals(DateType.simpleString, "date")
     assertEquals(TimestampType.simpleString, "timestamp")
     assertEquals(TimestampNTZType.simpleString, "timestamp_ntz")
-    assertEquals(NullType.simpleString, "null")
+    assertEquals(NullType.simpleString, "void")
     assertEquals(IntegerType.defaultSize, 4)
     assertEquals(LongType.defaultSize, 8)
     assertEquals(DoubleType.defaultSize, 8)

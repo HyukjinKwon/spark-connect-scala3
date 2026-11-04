@@ -54,18 +54,25 @@ private[sql] class GrpcExceptionConverter(
     fetchErrorDetails: String => Option[proto.FetchErrorDetailsResponse]
 ) {
 
-  /** Runs `f`, converting any gRPC error into a Spark exception. */
-  def convert[T](f: => T): T =
+  /**
+   * Runs `f`, converting any gRPC error into a Spark exception. When `operationId` is given it is
+   * attached to the converted exception (see [[SparkConnectClient.getOperationId]]).
+   */
+  def convert[T](f: => T, operationId: Option[String] = None): T =
     try f
     catch {
-      case e: StatusRuntimeException => throw toSparkThrowable(e)
+      case e: StatusRuntimeException =>
+        val converted = toSparkThrowable(e)
+        operationId.foreach(SparkConnectClient.attachOperationId(converted, _))
+        throw converted
     }
 
   /** Wraps an iterator so errors raised while consuming it are converted too. */
-  def convertIterator[T](iter: Iterator[T]): Iterator[T] = new Iterator[T] {
-    override def hasNext: Boolean = convert(iter.hasNext)
-    override def next(): T = convert(iter.next())
-  }
+  def convertIterator[T](iter: Iterator[T], operationId: Option[String] = None): Iterator[T] =
+    new Iterator[T] {
+      override def hasNext: Boolean = convert(iter.hasNext, operationId)
+      override def next(): T = convert(iter.next(), operationId)
+    }
 
   private def toSparkThrowable(e: StatusRuntimeException): Throwable =
     extractErrorId(e)
@@ -77,33 +84,8 @@ private[sql] class GrpcExceptionConverter(
   // Preferred path: reconstruct from FetchErrorDetails (server stack + causes).
   // ---------------------------------------------------------------------------
 
-  private def buildFromDetails(resp: proto.FetchErrorDetailsResponse): Option[Throwable] = {
-    val errors = resp.errors
-    val rootIdx = resp.rootErrorIdx.getOrElse(0)
-    if (errors.isEmpty || rootIdx < 0 || rootIdx >= errors.size) None
-    else
-      try Some(buildError(errors, rootIdx, Set.empty))
-      catch { case NonFatal(_) => None }
-  }
-
-  private def buildError(
-      errors: Seq[proto.FetchErrorDetailsResponse.Error],
-      idx: Int,
-      visited: Set[Int]
-  ): Throwable = {
-    val err = errors(idx)
-    val cause = err.causeIdx
-      .filter(i => i >= 0 && i < errors.size && !visited.contains(i))
-      .map(i => buildError(errors, i, visited + idx))
-      .orNull
-    val errorClass = err.sparkThrowable.flatMap(_.errorClass)
-    val throwable = newException(err.errorTypeHierarchy, err.message, cause, errorClass)
-    val stack = err.stackTrace.map { s =>
-      new StackTraceElement(s.declaringClass, s.methodName, s.fileName.orNull, s.lineNumber)
-    }.toArray
-    if (stack.nonEmpty) throwable.setStackTrace(stack)
-    throwable
-  }
+  private def buildFromDetails(resp: proto.FetchErrorDetailsResponse): Option[Throwable] =
+    GrpcExceptionConverter.errorsToThrowableOption(resp.rootErrorIdx.getOrElse(0), resp.errors)
 
   // ---------------------------------------------------------------------------
   // Fallback path: inline ErrorInfo metadata + message parsing.
@@ -113,33 +95,22 @@ private[sql] class GrpcExceptionConverter(
     val hierarchy = serverExceptionClasses(e)
     val rawMessage = Option(e.getStatus.getDescription).getOrElse(e.getMessage)
     val message = stripStatusCodePrefix(rawMessage)
-    val errorClass = extractErrorClass(message)
+    val info = errorInfo(e)
+    val errorClass = info
+      .flatMap(i => Option(i.getMetadataMap.get("errorClass")))
+      .filter(_.nonEmpty)
+      .orElse(extractErrorClass(message))
+    val sqlState = info.flatMap(i => Option(i.getMetadataMap.get("sqlState"))).filter(_.nonEmpty)
     val parseHint = errorClass.exists(_.startsWith("PARSE"))
-    newException(hierarchy, message, e, errorClass, parseHint)
-  }
-
-  // ---------------------------------------------------------------------------
-  // Mapping the server class hierarchy onto our exception set.
-  // ---------------------------------------------------------------------------
-
-  private def newException(
-      hierarchy: Seq[String],
-      message: String,
-      cause: Throwable,
-      errorClass: Option[String],
-      parseHint: Boolean = false
-  ): Throwable = {
-    val isParse = parseHint || hierarchy.exists(_.endsWith("ParseException"))
-    val isAnalysis = hierarchy.exists(c =>
-      c.endsWith("AnalysisException") ||
-        c.contains("NoSuchTable") || c.contains("NoSuchDatabase") ||
-        c.contains("NoSuchNamespace") || c.contains("NoSuchView") ||
-        c.contains("TableAlreadyExists") || c.contains("NamespaceAlreadyExists") ||
-        c.contains("ViewAlreadyExists")
+    GrpcExceptionConverter.newException(
+      hierarchy,
+      message,
+      e,
+      errorClass,
+      Map.empty,
+      sqlState,
+      parseHint
     )
-    if (isParse) new ParseException(message, cause, errorClass)
-    else if (isAnalysis) new AnalysisException(message, cause, errorClass)
-    else new SparkException(message, cause, errorClass)
   }
 
   // ---------------------------------------------------------------------------
@@ -178,4 +149,83 @@ private[sql] class GrpcExceptionConverter(
   // Minimal parse of a JSON array of strings such as ["a.B","c.D"].
   private def parseJsonStringArray(json: String): Seq[String] =
     "\"([^\"]*)\"".r.findAllMatchIn(json).map(_.group(1)).toSeq
+}
+
+private[sql] object GrpcExceptionConverter {
+
+  /**
+   * Rebuilds the server-side exception chain carried by a list of errors (as attached to a
+   * `FetchErrorDetailsResponse` or to failed observed metrics), starting at `rootIdx`.
+   */
+  def errorsToThrowable(
+      rootIdx: Int,
+      errors: Seq[proto.FetchErrorDetailsResponse.Error]
+  ): Throwable =
+    errorsToThrowableOption(rootIdx, errors).getOrElse(
+      new SparkException(s"Server reported an error (root index $rootIdx) without details")
+    )
+
+  private[client] def errorsToThrowableOption(
+      rootIdx: Int,
+      errors: Seq[proto.FetchErrorDetailsResponse.Error]
+  ): Option[Throwable] =
+    if (errors.isEmpty || rootIdx < 0 || rootIdx >= errors.size) None
+    else
+      try Some(buildError(errors, rootIdx, Set.empty))
+      catch { case NonFatal(_) => None }
+
+  private def buildError(
+      errors: Seq[proto.FetchErrorDetailsResponse.Error],
+      idx: Int,
+      visited: Set[Int]
+  ): Throwable = {
+    val err = errors(idx)
+    val cause = err.causeIdx
+      .filter(i => i >= 0 && i < errors.size && !visited.contains(i))
+      .map(i => buildError(errors, i, visited + idx))
+      .orNull
+    val errorClass = err.sparkThrowable.flatMap(_.errorClass)
+    val messageParameters = err.sparkThrowable.map(_.messageParameters).getOrElse(Map.empty)
+    val sqlState = err.sparkThrowable.flatMap(_.sqlState)
+    val throwable = newException(
+      err.errorTypeHierarchy,
+      err.message,
+      cause,
+      errorClass,
+      messageParameters,
+      sqlState
+    )
+    val stack = err.stackTrace.map { s =>
+      new StackTraceElement(s.declaringClass, s.methodName, s.fileName.orNull, s.lineNumber)
+    }.toArray
+    if (stack.nonEmpty) throwable.setStackTrace(stack)
+    throwable
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mapping the server class hierarchy onto our exception set.
+  // ---------------------------------------------------------------------------
+
+  private[client] def newException(
+      hierarchy: Seq[String],
+      message: String,
+      cause: Throwable,
+      errorClass: Option[String],
+      messageParameters: Map[String, String],
+      sqlState: Option[String],
+      parseHint: Boolean = false
+  ): Throwable = {
+    val isParse = parseHint || hierarchy.exists(_.endsWith("ParseException"))
+    val isAnalysis = hierarchy.exists(c =>
+      c.endsWith("AnalysisException") ||
+        c.contains("NoSuchTable") || c.contains("NoSuchDatabase") ||
+        c.contains("NoSuchNamespace") || c.contains("NoSuchView") ||
+        c.contains("TableAlreadyExists") || c.contains("NamespaceAlreadyExists") ||
+        c.contains("ViewAlreadyExists")
+    )
+    if (isParse) new ParseException(message, cause, errorClass, messageParameters, sqlState)
+    else if (isAnalysis)
+      new AnalysisException(message, cause, errorClass, messageParameters, sqlState)
+    else new SparkException(message, cause, errorClass, messageParameters, sqlState)
+  }
 }

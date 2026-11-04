@@ -18,7 +18,7 @@
 package org.apache.spark.sql.pipelines
 
 import org.apache.spark.connect.proto
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{Column, DataFrame, Dataset, SparkSession}
 import org.apache.spark.sql.connect.common.DataTypeProtoConverter
 import org.apache.spark.sql.types.DataType
 
@@ -117,7 +117,7 @@ class Pipeline private (
    */
   def createTable(
       name: String,
-      df: Option[DataFrame] = None,
+      df: Option[Dataset[?]] = None,
       comment: Option[String] = None,
       format: Option[String] = None,
       partitionCols: Seq[String] = Seq.empty,
@@ -145,7 +145,7 @@ class Pipeline private (
    */
   def createMaterializedView(
       name: String,
-      df: Option[DataFrame] = None,
+      df: Option[Dataset[?]] = None,
       comment: Option[String] = None,
       format: Option[String] = None,
       partitionCols: Seq[String] = Seq.empty,
@@ -173,7 +173,7 @@ class Pipeline private (
    */
   def createTemporaryView(
       name: String,
-      df: Option[DataFrame] = None,
+      df: Option[Dataset[?]] = None,
       comment: Option[String] = None
   ): String =
     defineTableOutput(
@@ -204,7 +204,7 @@ class Pipeline private (
    */
   def createSink(
       name: String,
-      df: DataFrame,
+      df: Dataset[?],
       format: Option[String] = None,
       options: Map[String, String] = Map.empty
   ): String = {
@@ -236,7 +236,7 @@ class Pipeline private (
    */
   def defineFlow(
       name: String,
-      df: DataFrame,
+      df: Dataset[?],
       target: Option[String] = None,
       once: Boolean = false,
       sqlConf: Map[String, String] = Map.empty
@@ -258,6 +258,98 @@ class Pipeline private (
       .flatMap(_.resultType.defineFlowResult)
       .flatMap(_.resolvedIdentifier)
     identifierString(resolved).getOrElse(name)
+  }
+
+  /**
+   * Define an Auto CDC flow (Spark 4.2+) that applies the change-data-capture events of `source` to
+   * the streaming table `target`, which must already be defined (e.g. with [[createTable]] and no
+   * flow). SCD type 2 targets and the history-tracking column lists need Spark 4.3+. Mirrors
+   * `pyspark.pipelines.create_auto_cdc_flow`.
+   *
+   * @param target
+   *   the target streaming table.
+   * @param source
+   *   the name of the CDC source to stream from.
+   * @param keys
+   *   the column(s) that uniquely identify a row in the source and target (unqualified columns).
+   * @param sequenceBy
+   *   the expression that orders the source events.
+   * @param applyAsDeletes
+   *   a boolean expression that marks an event as a delete.
+   * @param columnList
+   *   the columns to include in the target; exclusive with `exceptColumnList`.
+   * @param exceptColumnList
+   *   the columns to exclude from the target; exclusive with `columnList`.
+   * @param storedAsScdType
+   *   the slowly changing dimension type of the target: `1` or `2` (server default if unset).
+   * @param name
+   *   the flow name (defaults to `target`).
+   * @param trackHistoryColumnList
+   *   SCD2 only: the columns whose changes open a new history record.
+   * @param trackHistoryExceptColumnList
+   *   SCD2 only: the columns excluded from history tracking.
+   * @param sqlConf
+   *   SQL configurations set when running this flow.
+   * @return
+   *   the resolved flow name.
+   */
+  def createAutoCdcFlow(
+      target: String,
+      source: String,
+      keys: Seq[Column],
+      sequenceBy: Column,
+      applyAsDeletes: Option[Column] = None,
+      columnList: Seq[Column] = Seq.empty,
+      exceptColumnList: Seq[Column] = Seq.empty,
+      storedAsScdType: Option[Int] = None,
+      name: Option[String] = None,
+      trackHistoryColumnList: Seq[Column] = Seq.empty,
+      trackHistoryExceptColumnList: Seq[Column] = Seq.empty,
+      sqlConf: Map[String, String] = Map.empty
+  ): String = {
+    require(keys.nonEmpty, "At least one key must be provided for an Auto CDC flow.")
+    require(
+      columnList.isEmpty || exceptColumnList.isEmpty,
+      "columnList and exceptColumnList cannot be set together."
+    )
+    require(
+      trackHistoryColumnList.isEmpty || trackHistoryExceptColumnList.isEmpty,
+      "trackHistoryColumnList and trackHistoryExceptColumnList cannot be set together."
+    )
+    val scdType = storedAsScdType.map {
+      case 1 => proto.PipelineCommand.DefineFlow.SCDType.SCD_TYPE_1
+      case 2 => proto.PipelineCommand.DefineFlow.SCDType.SCD_TYPE_2
+      case other =>
+        throw new IllegalArgumentException(s"storedAsScdType must be 1 or 2, but was $other")
+    }
+    require(
+      storedAsScdType.contains(2) ||
+        (trackHistoryColumnList.isEmpty && trackHistoryExceptColumnList.isEmpty),
+      "trackHistoryColumnList and trackHistoryExceptColumnList require storedAsScdType = 2."
+    )
+    val details = proto.PipelineCommand.DefineFlow.AutoCdcFlowDetails(
+      source = Some(source),
+      keys = keys.map(_.expr),
+      sequenceBy = Some(sequenceBy.expr),
+      applyAsDeletes = applyAsDeletes.map(_.expr),
+      columnList = columnList.map(_.expr),
+      exceptColumnList = exceptColumnList.map(_.expr),
+      storedAsScdType =
+        scdType.getOrElse(proto.PipelineCommand.DefineFlow.SCDType.SCD_TYPE_UNSPECIFIED),
+      trackHistoryColumnList = trackHistoryColumnList.map(_.expr),
+      trackHistoryExceptColumnList = trackHistoryExceptColumnList.map(_.expr)
+    )
+    val flowName = name.getOrElse(target)
+    val flow = proto.PipelineCommand.DefineFlow(
+      dataflowGraphId = Some(graphId),
+      flowName = Some(flowName),
+      targetDatasetName = Some(target),
+      sqlConf = sqlConf,
+      details = proto.PipelineCommand.DefineFlow.Details.AutoCdcFlowDetails(details)
+    )
+    val result = dispatch(proto.PipelineCommand(proto.PipelineCommand.CommandType.DefineFlow(flow)))
+    identifierString(result.flatMap(_.resultType.defineFlowResult).flatMap(_.resolvedIdentifier))
+      .getOrElse(flowName)
   }
 
   /**
@@ -330,7 +422,7 @@ class Pipeline private (
   private def defineTableOutput(
       name: String,
       outputType: OutputType,
-      df: Option[DataFrame],
+      df: Option[Dataset[?]],
       comment: Option[String],
       format: Option[String],
       partitionCols: Seq[String],

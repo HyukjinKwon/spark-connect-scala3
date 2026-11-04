@@ -35,20 +35,25 @@ import org.apache.spark.sql.Column
 class WindowSpec private[sql] (
     private[sql] val partitionSpec: Seq[proto.Expression],
     private[sql] val orderSpec: Seq[proto.Expression.SortOrder],
-    private[sql] val frame: Option[ProtoFrame]
+    private[sql] val frame: Option[ProtoFrame],
+    // Subquery relations referenced by the partition/order expressions (see Column).
+    private[sql] val subqueryRelations: Seq[proto.Relation] = Nil
 ) {
 
   def partitionBy(colName: String, colNames: String*): WindowSpec =
     partitionBy((colName +: colNames).map(Column.fromName)*)
 
   def partitionBy(cols: Column*): WindowSpec =
-    new WindowSpec(cols.map(_.expr), orderSpec, frame)
+    new WindowSpec(cols.map(_.expr), orderSpec, frame, mergeWith(cols))
 
   def orderBy(colName: String, colNames: String*): WindowSpec =
     orderBy((colName +: colNames).map(Column.fromName)*)
 
   def orderBy(cols: Column*): WindowSpec =
-    new WindowSpec(partitionSpec, cols.map(WindowSpec.toSortOrder), frame)
+    new WindowSpec(partitionSpec, cols.map(WindowSpec.toSortOrder), frame, mergeWith(cols))
+
+  private def mergeWith(cols: Seq[Column]): Seq[proto.Relation] =
+    (subqueryRelations ++ Column.mergeRelations(cols)).distinctBy(Column.planIdOf)
 
   def rowsBetween(start: Long, end: Long): WindowSpec =
     withFrame(ProtoFrame.FrameType.FRAME_TYPE_ROW, start, end)
@@ -66,7 +71,8 @@ class WindowSpec private[sql] (
           lower = Some(WindowSpec.boundary(start)),
           upper = Some(WindowSpec.boundary(end))
         )
-      )
+      ),
+      subqueryRelations
     )
 
   /** Wraps `column` as a window function over this specification. */
@@ -77,7 +83,10 @@ class WindowSpec private[sql] (
       orderSpec = orderSpec,
       frameSpec = frame
     )
-    new Column(proto.Expression(exprType = proto.Expression.ExprType.Window(window)))
+    new Column(
+      proto.Expression(exprType = proto.Expression.ExprType.Window(window)),
+      (Column.mergeRelations(Seq(column)) ++ subqueryRelations).distinctBy(Column.planIdOf)
+    )
   }
 }
 

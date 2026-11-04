@@ -18,9 +18,10 @@
 package org.apache.spark.sql.streaming
 
 import scala.collection.mutable
+import scala.jdk.CollectionConverters._
 
 import org.apache.spark.connect.proto
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{AnalysisException, DataFrame, Dataset, SparkSession}
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -41,7 +42,8 @@ class DataStreamReader private[sql] (spark: SparkSession) {
 
   private var source: Option[String] = None
   private var userSchema: Option[String] = None
-  private val extraOptions = mutable.Map.empty[String, String]
+  private var sourceName: Option[String] = None
+  private val extraOptions = mutable.LinkedHashMap.empty[String, String]
 
   /**
    * Specifies the input data source format (e.g. `"rate"`, `"kafka"`).
@@ -72,7 +74,7 @@ class DataStreamReader private[sql] (spark: SparkSession) {
    *   this reader, for chaining.
    */
   def schema(schema: StructType): DataStreamReader = {
-    this.userSchema = Option(schema.simpleString)
+    this.userSchema = Option(schema).map(_.toDDL)
     this
   }
 
@@ -102,8 +104,30 @@ class DataStreamReader private[sql] (spark: SparkSession) {
    * @return
    *   this reader, for chaining.
    */
-  def options(options: Map[String, String]): DataStreamReader = {
+  def options(options: scala.collection.Map[String, String]): DataStreamReader = {
     extraOptions ++= options
+    this
+  }
+
+  /** (Java-specific) Adds multiple input options. */
+  def options(options: java.util.Map[String, String]): DataStreamReader =
+    this.options(options.asScala)
+
+  /**
+   * Names this streaming source (Spark 4.2+). The name identifies the source in checkpoint
+   * metadata, so a query keeps a stable checkpoint location when its sources evolve. Names may only
+   * contain ASCII letters, digits, and underscores.
+   */
+  def name(sourceName: String): DataStreamReader = {
+    require(sourceName != null, "Source name cannot be null")
+    require(sourceName.nonEmpty, "Source name cannot be empty")
+    if (!sourceName.matches("^[a-zA-Z0-9_]+$")) {
+      throw AnalysisException.withErrorClass(
+        "STREAMING_QUERY_EVOLUTION_ERROR.INVALID_SOURCE_NAME",
+        Map("sourceName" -> sourceName)
+      )
+    }
+    this.sourceName = Some(sourceName)
     this
   }
 
@@ -116,7 +140,8 @@ class DataStreamReader private[sql] (spark: SparkSession) {
       format = source,
       schema = userSchema,
       options = extraOptions.toMap,
-      paths = Seq.empty
+      paths = Seq.empty,
+      sourceName = sourceName
     )
     streamRelation(proto.Read.ReadType.DataSource(dataSource))
   }
@@ -127,7 +152,8 @@ class DataStreamReader private[sql] (spark: SparkSession) {
       format = source,
       schema = userSchema,
       options = extraOptions.toMap,
-      paths = Seq(path)
+      paths = Seq(path),
+      sourceName = sourceName
     )
     streamRelation(proto.Read.ReadType.DataSource(dataSource))
   }
@@ -156,6 +182,41 @@ class DataStreamReader private[sql] (spark: SparkSession) {
    * column.
    */
   def text(path: String): DataFrame = format("text").load(path)
+
+  def xml(path: String): DataFrame = format("xml").load(path)
+
+  /** Loads a text file stream and returns a `Dataset[String]` of its lines. */
+  def textFile(path: String): Dataset[String] = {
+    assertNoSpecifiedSchema("textFile")
+    text(path).select("value").as[String]
+  }
+
+  /**
+   * Returns the row-level changes (Change Data Capture) of the table as a streaming [[DataFrame]]
+   * (Spark 4.2+), for Data Source V2 tables whose catalog supports change logs. Use options such as
+   * `startingVersion` to choose where to start.
+   */
+  def changes(tableName: String): DataFrame = {
+    require(tableName != null, "The table name can't be null")
+    assertNoSpecifiedSchema("changes")
+    spark.newDataFrame(
+      proto.Relation.RelType.RelationChanges(
+        proto.RelationChanges(
+          unparsedIdentifier = tableName,
+          options = extraOptions.toMap,
+          isStreaming = true
+        )
+      )
+    )
+  }
+
+  private def assertNoSpecifiedSchema(operation: String): Unit =
+    if (userSchema.isDefined) {
+      throw AnalysisException.withErrorClass(
+        "_LEGACY_ERROR_TEMP_1189",
+        Map("operation" -> operation)
+      )
+    }
 
   private def streamRelation(readType: proto.Read.ReadType): DataFrame =
     spark.newDataFrame(

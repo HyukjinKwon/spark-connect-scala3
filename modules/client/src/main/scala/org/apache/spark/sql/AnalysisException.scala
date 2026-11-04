@@ -23,8 +23,32 @@ import org.apache.spark.SparkException
  * Thrown when a query fails to analyze on the server: an unknown table or column, a type mismatch,
  * an ambiguous reference, and similar. Mirrors `org.apache.spark.sql.AnalysisException`.
  */
-class AnalysisException(message: String, cause: Throwable, errorClass: Option[String])
-    extends SparkException(message, cause, errorClass) {
+class AnalysisException(
+    message: String,
+    cause: Throwable,
+    errorClass: Option[String],
+    messageParameters: Map[String, String] = Map.empty,
+    sqlState: Option[String] = None
+) extends SparkException(message, cause, errorClass, messageParameters, sqlState) {
   def this(message: String) = this(message, null, None)
   def this(message: String, cause: Throwable) = this(message, cause, None)
+}
+
+object AnalysisException {
+
+  /**
+   * Builds a client-side [[AnalysisException]] for an error class the client validates itself (for
+   * example invalid `nearestByJoin` arguments), with the same message the server renders.
+   */
+  private[spark] def withErrorClass(
+      errorClass: String,
+      messageParameters: Map[String, String]
+  ): AnalysisException =
+    new AnalysisException(
+      org.apache.spark.ClientErrors.message(errorClass, messageParameters),
+      null,
+      Some(errorClass),
+      messageParameters,
+      org.apache.spark.ClientErrors.sqlState(errorClass)
+    )
 }
