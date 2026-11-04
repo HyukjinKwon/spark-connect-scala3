@@ -12,7 +12,7 @@ own build), so it shows exactly what a downstream project looks like.
    $SPARK_HOME/sbin/start-connect-server.sh
    ```
 
-   (On Spark 3.5.x add `--packages org.apache.spark:spark-connect_2.13:3.5.8` and use a
+   (On Spark 3.5.x add `--packages org.apache.spark:spark-connect_2.13:3.5.9` and use a
    Scala 2.13 distribution.)
 
 2. From this directory, run the app, pointing it at the server:
@@ -24,7 +24,7 @@ own build), so it shows exactly what a downstream project looks like.
 Expected output:
 
 ```
-Connected to Apache Spark 4.1.2 at sc://localhost:15002
+Connected to Apache Spark 4.3.0 at sc://localhost:15002
 +------+---+------+
 |bucket|  n| total|
 +------+---+------+
@@ -42,9 +42,9 @@ grand total = 499500
 - The dependency line is the only thing your own project needs:
 
   ```scala
-  libraryDependencies += "com.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.3.0"
+  libraryDependencies += "com.github.hyukjinkwon" %% "spark-connect-scala3-client" % "0.4.0"
   ```
 
-- Trying it before `0.3.0` is on Maven Central? Publish the client locally first - from
+- Trying it before `0.4.0` is on Maven Central? Publish the client locally first - from
   the repository root run `sbt publishLocal`, then set the version here to the locally
   published one.

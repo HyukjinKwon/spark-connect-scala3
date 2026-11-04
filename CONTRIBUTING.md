@@ -103,14 +103,21 @@ One-time setup:
 
 Cut a release:
 
-```bash
-git tag vX.Y.Z
-git push origin vX.Y.Z
-```
+1. Rename the `CHANGELOG.md` "Unreleased" section to the new version and date, and
+   push that to `main`.
+2. Tag the commit and push the tag:
 
-`sbt-ci-release` derives the version from the tag (`vX.Y.Z` -> `X.Y.Z`). Pushing to
-`main` without a tag publishes a `-SNAPSHOT`. The workflow can also be run manually
-from the Actions tab (publishes a snapshot when not triggered by a tag).
+   ```bash
+   git tag -a vX.Y.Z -m "Release X.Y.Z"
+   git push origin vX.Y.Z
+   ```
+
+3. Once the release is on Maven Central, update the version in the install
+   snippets: `README.md`, `docs/installation.md`, and `examples/standalone/`.
+
+`sbt-ci-release` derives the version from the tag (`vX.Y.Z` -> `X.Y.Z`). Only version
+tags trigger the workflow; running it manually from the Actions tab without a tag
+publishes a `-SNAPSHOT`.
 
 ## Pull requests
 
