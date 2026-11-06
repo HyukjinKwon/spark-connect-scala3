@@ -355,6 +355,42 @@ class IntegrationSuite extends munit.FunSuite {
     assertEquals(ds.collect().toSeq, Seq(ItPerson(1L, "a"), ItPerson(2L, "b")))
   }
 
+  test("closing a non-reattachable execution cancels a blocked read") {
+    import org.apache.spark.sql.connect.client.SparkConnectClient
+    import java.util.concurrent.CountDownLatch
+    import java.util.concurrent.atomic.AtomicReference
+
+    // Reattachable execute resumes a broken stream; this test needs the non-reattachable path,
+    // whose close() must cancel the gRPC call instead of silently abandoning it.
+    val client = SparkConnectClient.builder().connectionString(remote).reattachable(false).build()
+    try
+      val plan = spark.sql("SELECT java_method('java.lang.Thread', 'sleep', 10000L)").plan
+      val responses = client.execute(plan)
+      val blockedInNext = new CountDownLatch(1)
+      val outcome = new AtomicReference[Throwable]()
+      val reader = new Thread(() =>
+        try
+          blockedInNext.countDown()
+          responses.next(): Unit
+        catch case t: Throwable => outcome.set(t)
+      )
+      reader.setDaemon(true)
+      reader.start()
+      blockedInNext.await()
+      Thread.sleep(200) // let the reader actually block in next() before closing.
+      val start = System.nanoTime()
+      responses.close()
+      reader.join(5000)
+      val elapsedMs = (System.nanoTime() - start) / 1000000
+      assert(!reader.isAlive, "reader thread did not unblock after close()")
+      assert(
+        elapsedMs < 5000,
+        s"close() took ${elapsedMs}ms to unblock the reader; a no-op close would take ~10000ms"
+      )
+      assert(outcome.get() != null, "expected the blocked read to fail with a cancellation error")
+    finally client.shutdown()
+  }
+
   /** True if the connected server is at least the given Spark major.minor version. */
   private def atLeastSpark(major: Int, minor: Int): Boolean = {
     val parts = spark.version.split("\\.")
