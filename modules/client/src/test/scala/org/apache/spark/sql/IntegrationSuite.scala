@@ -371,7 +371,10 @@ class IntegrationSuite extends munit.FunSuite {
       val reader = new Thread(() =>
         try
           blockedInNext.countDown()
-          responses.next(): Unit
+          // The server streams the schema response as soon as analysis finishes, before the slow
+          // sleep() even starts executing. A single next() would just read that schema message
+          // and return immediately, so drain fully to reach the response that waits on sleep().
+          while responses.hasNext do responses.next(): Unit
         catch case t: Throwable => outcome.set(t)
       )
       reader.setDaemon(true)
