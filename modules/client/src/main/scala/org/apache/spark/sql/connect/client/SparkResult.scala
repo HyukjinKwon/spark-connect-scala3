@@ -37,7 +37,8 @@ import org.apache.spark.sql.types.{StringType, StructField, StructType}
 /**
  * Materializes the streaming `ExecutePlanResponse`s of a query into a sequence of [[Row]]s by
  * decoding the embedded Arrow IPC batches. The result is computed lazily on first access and
- * cached. (Observed metrics are handed to their `Observation`s by the session.)
+ * cached. (Observed metrics are handed to their `Observation`s by the session.) Owns `responses`:
+ * it closes the execution once results are fully consumed or decoding fails, whichever first.
  */
 private[sql] class SparkResult(
     responses: CloseableIterator[proto.ExecutePlanResponse],

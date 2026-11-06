@@ -33,14 +33,13 @@ private[sql] trait CloseableIterator[+T] extends Iterator[T] {
   def close(): Unit
 
   /** Like [[Iterator.map]], but the result stays closeable by delegating close to this iterator. */
-  def mapClosable[U](f: T => U): CloseableIterator[U] = {
+  def mapClosable[U](f: T => U): CloseableIterator[U] =
     val source = this
     new CloseableIterator[U] {
       override def hasNext: Boolean = source.hasNext
       override def next(): U = f(source.next())
       override def close(): Unit = source.close()
     }
-  }
 }
 
 /**
