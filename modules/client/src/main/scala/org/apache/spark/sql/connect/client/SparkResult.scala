@@ -40,7 +40,7 @@ import org.apache.spark.sql.types.{StringType, StructField, StructType}
  * cached. (Observed metrics are handed to their `Observation`s by the session.)
  */
 private[sql] class SparkResult(
-    responses: Iterator[proto.ExecutePlanResponse],
+    responses: CloseableIterator[proto.ExecutePlanResponse],
     allocator: BufferAllocator
 ) {
 
@@ -48,21 +48,28 @@ private[sql] class SparkResult(
   private val rows = mutable.ArrayBuffer.empty[Row]
   private var processed = false
 
+  /**
+   * Marks itself processed before consuming `responses`, so a decode failure is terminal: a retry
+   * would resume reading from a stream this method is about to close in `finally`, which a
+   * cancelled or already-released execution cannot serve.
+   */
   private def processResponses(): Unit = {
     if (processed) return
-    while (responses.hasNext) {
-      val response = responses.next()
-      response.schema.foreach { protoSchema =>
-        _schema = DataTypeProtoConverter.toCatalystType(protoSchema) match {
-          case s: StructType => s
-          case other => StructType(Array(StructField("value", other)))
+    processed = true
+    try
+      while (responses.hasNext) {
+        val response = responses.next()
+        response.schema.foreach { protoSchema =>
+          _schema = DataTypeProtoConverter.toCatalystType(protoSchema) match {
+            case s: StructType => s
+            case other => StructType(Array(StructField("value", other)))
+          }
+        }
+        response.responseType.arrowBatch.foreach { batch =>
+          readArrowBatch(batch.data.toByteArray)
         }
       }
-      response.responseType.arrowBatch.foreach { batch =>
-        readArrowBatch(batch.data.toByteArray)
-      }
-    }
-    processed = true
+    finally responses.close()
   }
 
   private def readArrowBatch(bytes: Array[Byte]): Unit = {
