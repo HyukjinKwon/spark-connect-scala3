@@ -158,12 +158,25 @@ class GrpcExceptionConverterSuite extends munit.FunSuite {
 
   test("convertIterator converts errors raised during iteration") {
     val conv = new GrpcExceptionConverter(noDetails)
-    val failing = new Iterator[Int] {
+    val failing = new CloseableIterator[Int] {
       override def hasNext: Boolean = true
       override def next(): Int = throw statusError("INTERNAL: boom while streaming")
+      override def close(): Unit = ()
     }
     val wrapped = conv.convertIterator(failing)
     val t = intercept[SparkException](wrapped.next())
     assertEquals(t.getMessage, "boom while streaming")
+  }
+
+  test("convertIterator forwards close to the wrapped iterator") {
+    val conv = new GrpcExceptionConverter(noDetails)
+    var closed = false
+    val source = new CloseableIterator[Int] {
+      override def hasNext: Boolean = false
+      override def next(): Int = throw new NoSuchElementException()
+      override def close(): Unit = closed = true
+    }
+    conv.convertIterator(source).close()
+    assert(closed)
   }
 }

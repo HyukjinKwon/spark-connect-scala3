@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
 
-import io.grpc.{ManagedChannel, ManagedChannelBuilder, Metadata => GrpcMetadata}
+import io.grpc.{Context, ManagedChannel, ManagedChannelBuilder, Metadata => GrpcMetadata}
 import io.grpc.stub.MetadataUtils
 
 import org.apache.spark.connect.proto
@@ -135,7 +135,7 @@ class SparkConnectClient private[sql] (
   private[sql] def execute(
       plan: proto.Plan,
       operationId: Option[String] = None
-  ): Iterator[proto.ExecutePlanResponse] = {
+  ): CloseableIterator[proto.ExecutePlanResponse] = {
     val resolvedOperationId = operationId.getOrElse(UUID.randomUUID().toString)
     require(
       isValidUUID(resolvedOperationId),
@@ -157,9 +157,30 @@ class SparkConnectClient private[sql] (
       } else {
         // Non-reattachable: retry only the initial call (safe before any response is consumed).
         // No deadline here: timing out would kill the execution with no way to resume it.
-        retryHandler.retry(stub.executePlan(request))
+        executeNonReattachable(request)
       }
     exceptions.convertIterator(responses, Some(resolvedOperationId))
+  }
+
+  /**
+   * Issues a non-reattachable `ExecutePlan` call under a cancellable gRPC [[Context]], so close()
+   * can actually stop a thread blocked in next(): a plain blocking iterator has no other way to
+   * interrupt a read in progress, and closing it without cancelling the call would abandon the
+   * execution on the server instead of stopping it.
+   */
+  private def executeNonReattachable(
+      request: proto.ExecutePlanRequest
+  ): CloseableIterator[proto.ExecutePlanResponse] = {
+    val context = Context.current().withCancellation()
+    val previous = context.attach()
+    val call =
+      try retryHandler.retry(stub.executePlan(request))
+      finally context.detach(previous)
+    new CloseableIterator[proto.ExecutePlanResponse] {
+      override def hasNext: Boolean = call.hasNext
+      override def next(): proto.ExecutePlanResponse = call.next()
+      override def close(): Unit = context.cancel(null)
+    }
   }
 
   // ---------------------------------------------------------------------------
