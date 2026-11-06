@@ -23,8 +23,9 @@ import java.util.concurrent.TimeUnit
 
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
+import scala.util.control.NonFatal
 
-import io.grpc.{ManagedChannel, ManagedChannelBuilder, Metadata => GrpcMetadata}
+import io.grpc.{Context, ManagedChannel, ManagedChannelBuilder, Metadata => GrpcMetadata}
 import io.grpc.stub.MetadataUtils
 
 import org.apache.spark.connect.proto
@@ -135,7 +136,7 @@ class SparkConnectClient private[sql] (
   private[sql] def execute(
       plan: proto.Plan,
       operationId: Option[String] = None
-  ): Iterator[proto.ExecutePlanResponse] = {
+  ): CloseableIterator[proto.ExecutePlanResponse] = {
     val resolvedOperationId = operationId.getOrElse(UUID.randomUUID().toString)
     require(
       isValidUUID(resolvedOperationId),
@@ -157,10 +158,42 @@ class SparkConnectClient private[sql] (
       } else {
         // Non-reattachable: retry only the initial call (safe before any response is consumed).
         // No deadline here: timing out would kill the execution with no way to resume it.
-        retryHandler.retry(stub.executePlan(request))
+        executeNonReattachable(request)
       }
     exceptions.convertIterator(responses, Some(resolvedOperationId))
   }
+
+  /**
+   * Issues a non-reattachable `ExecutePlan` call under a cancellable gRPC [[Context]], so close()
+   * can actually stop a thread blocked in next(): a plain blocking iterator has no other way to
+   * interrupt a read in progress. Cancelling the context only stops this client from waiting; it
+   * does not tell the server to stop computing, so close() also sends `Interrupt` for the
+   * operation, same as the reattachable iterator's `ReleaseExecute` on close.
+   */
+  private def executeNonReattachable(
+      request: proto.ExecutePlanRequest
+  ): CloseableIterator[proto.ExecutePlanResponse] = {
+    val context = Context.current().withCancellation()
+    val previous = context.attach()
+    val call =
+      try retryHandler.retry(stub.executePlan(request))
+      finally context.detach(previous)
+    new CloseableIterator[proto.ExecutePlanResponse] {
+      override def hasNext: Boolean = call.hasNext
+      override def next(): proto.ExecutePlanResponse = call.next()
+      override def close(): Unit = {
+        context.cancel(null)
+        request.operationId.foreach(stopRunningOnServer)
+      }
+    }
+  }
+
+  /** Fire-and-forget: asks the server to stop an operation this client has given up waiting for. */
+  private def stopRunningOnServer(operationId: String): Unit =
+    ExecutePlanResponseReattachableIterator.cleanupExecutor.execute { () =>
+      try interruptOperation(operationId)
+      catch { case NonFatal(_) => /* best effort; server reclaims abandoned executions */ }
+    }
 
   // ---------------------------------------------------------------------------
   // AnalyzePlan

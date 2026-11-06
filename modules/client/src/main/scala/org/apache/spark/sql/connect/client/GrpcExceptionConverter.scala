@@ -67,11 +67,19 @@ private[sql] class GrpcExceptionConverter(
         throw converted
     }
 
-  /** Wraps an iterator so errors raised while consuming it are converted too. */
-  def convertIterator[T](iter: Iterator[T], operationId: Option[String] = None): Iterator[T] =
-    new Iterator[T] {
+  /**
+   * Wraps a closeable iterator so errors raised while consuming it are converted too. close()
+   * forwards to `iter` unconverted: a close failure is a cleanup concern for the caller, not a
+   * query error to translate.
+   */
+  def convertIterator[T](
+      iter: CloseableIterator[T],
+      operationId: Option[String] = None
+  ): CloseableIterator[T] =
+    new CloseableIterator[T] {
       override def hasNext: Boolean = convert(iter.hasNext, operationId)
       override def next(): T = convert(iter.next(), operationId)
+      override def close(): Unit = iter.close()
     }
 
   private def toSparkThrowable(e: StatusRuntimeException): Throwable =

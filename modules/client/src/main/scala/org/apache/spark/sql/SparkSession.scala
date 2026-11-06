@@ -29,7 +29,12 @@ import org.apache.arrow.memory.{BufferAllocator, RootAllocator}
 import com.google.protobuf.ByteString
 
 import org.apache.spark.connect.proto
-import org.apache.spark.sql.connect.client.{ArrowSerializer, SparkConnectClient, SparkResult}
+import org.apache.spark.sql.connect.client.{
+  ArrowSerializer,
+  CloseableIterator,
+  SparkConnectClient,
+  SparkResult
+}
 import org.apache.spark.sql.types.StructType
 
 /**
@@ -158,8 +163,8 @@ class SparkSession private[sql] (private[sql] val client: SparkConnectClient)
    * Executes `plan`, handing observed metrics that belong to a registered [[Observation]] to it as
    * the responses stream in.
    */
-  private[sql] def executeInternal(plan: proto.Plan): Iterator[proto.ExecutePlanResponse] =
-    client.execute(plan).map { response =>
+  private[sql] def executeInternal(plan: proto.Plan): CloseableIterator[proto.ExecutePlanResponse] =
+    client.execute(plan).mapClosable { response =>
       if (response.observedMetrics.nonEmpty) processObservedMetrics(response.observedMetrics)
       response
     }
@@ -170,7 +175,8 @@ class SparkSession private[sql] (private[sql] val client: SparkConnectClient)
   /** Sends a command plan to the server and drains the response stream. */
   private[sql] def executeCommand(command: proto.Command): Unit = {
     val responses = executeInternal(proto.Plan(proto.Plan.OpType.Command(command)))
-    while (responses.hasNext) responses.next()
+    try while (responses.hasNext) responses.next()
+    finally responses.close()
   }
 
   /**
@@ -178,8 +184,11 @@ class SparkSession private[sql] (private[sql] val client: SparkConnectClient)
    * [[DataFrame]] over the relation the server sends back.
    */
   private def executeCommandWithDataFrameReturn(command: proto.Command): DataFrame = {
-    val responses = executeInternal(proto.Plan(proto.Plan.OpType.Command(command))).toSeq
-    val result = responses
+    val responses = executeInternal(proto.Plan(proto.Plan.OpType.Command(command)))
+    val collected =
+      try responses.toSeq
+      finally responses.close()
+    val result = collected
       .flatMap(_.responseType.sqlCommandResult)
       .headOption
       .getOrElse(throw new IllegalStateException("SQLCommandResult must be present"))

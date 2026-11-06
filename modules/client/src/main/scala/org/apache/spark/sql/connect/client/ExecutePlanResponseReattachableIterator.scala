@@ -31,6 +31,15 @@ import org.apache.spark.sql.connect.client.GrpcRetryHandler.RetryException
 /** An iterator that can be closed to release server-side resources. */
 private[sql] trait CloseableIterator[+T] extends Iterator[T] {
   def close(): Unit
+
+  /** Like [[Iterator.map]], but the result stays closeable by delegating close to this iterator. */
+  def mapClosable[U](f: T => U): CloseableIterator[U] =
+    val source = this
+    new CloseableIterator[U] {
+      override def hasNext: Boolean = source.hasNext
+      override def next(): U = f(source.next())
+      override def close(): Unit = source.close()
+    }
 }
 
 /**
@@ -174,7 +183,7 @@ private[sql] class ExecutePlanResponseReattachableIterator(
 
   // Fire-and-forget the release on a shared daemon executor so iteration is not blocked.
   private def submitRelease(releaseRequest: proto.ReleaseExecuteRequest): Unit =
-    releaseExecutor.execute { () =>
+    cleanupExecutor.execute { () =>
       try retry(stub.releaseExecute(releaseRequest))
       catch { case NonFatal(_) => /* best effort; server reclaims abandoned executions */ }
     }
@@ -253,11 +262,12 @@ private[sql] class ExecutePlanResponseReattachableIterator(
 }
 
 private[sql] object ExecutePlanResponseReattachableIterator {
-  // Shared daemon executor for fire-and-forget ReleaseExecute RPCs across all queries.
-  private val releaseExecutor =
+  // Shared daemon executor for fire-and-forget execution-cleanup RPCs (ReleaseExecute, Interrupt)
+  // across all queries, so close() never blocks the caller on a network round trip.
+  private[client] val cleanupExecutor =
     Executors.newCachedThreadPool(new ThreadFactory {
       override def newThread(r: Runnable): Thread = {
-        val t = new Thread(r, "spark-connect-release-execute")
+        val t = new Thread(r, "spark-connect-execution-cleanup")
         t.setDaemon(true)
         t
       }
