@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit
 
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
+import scala.util.control.NonFatal
 
 import io.grpc.{Context, ManagedChannel, ManagedChannelBuilder, Metadata => GrpcMetadata}
 import io.grpc.stub.MetadataUtils
@@ -165,8 +166,9 @@ class SparkConnectClient private[sql] (
   /**
    * Issues a non-reattachable `ExecutePlan` call under a cancellable gRPC [[Context]], so close()
    * can actually stop a thread blocked in next(): a plain blocking iterator has no other way to
-   * interrupt a read in progress, and closing it without cancelling the call would abandon the
-   * execution on the server instead of stopping it.
+   * interrupt a read in progress. Cancelling the context only stops this client from waiting; it
+   * does not tell the server to stop computing, so close() also sends `Interrupt` for the
+   * operation, same as the reattachable iterator's `ReleaseExecute` on close.
    */
   private def executeNonReattachable(
       request: proto.ExecutePlanRequest
@@ -179,9 +181,19 @@ class SparkConnectClient private[sql] (
     new CloseableIterator[proto.ExecutePlanResponse] {
       override def hasNext: Boolean = call.hasNext
       override def next(): proto.ExecutePlanResponse = call.next()
-      override def close(): Unit = context.cancel(null)
+      override def close(): Unit = {
+        context.cancel(null)
+        request.operationId.foreach(stopRunningOnServer)
+      }
     }
   }
+
+  /** Fire-and-forget: asks the server to stop an operation this client has given up waiting for. */
+  private def stopRunningOnServer(operationId: String): Unit =
+    ExecutePlanResponseReattachableIterator.cleanupExecutor.execute { () =>
+      try interruptOperation(operationId)
+      catch { case NonFatal(_) => /* best effort; server reclaims abandoned executions */ }
+    }
 
   // ---------------------------------------------------------------------------
   // AnalyzePlan
