@@ -358,6 +358,46 @@ class SparkResultRoundTripSuite extends munit.FunSuite {
     assertEquals(decoded.get("b"), Some(2))
   }
 
+  test("round-trips a list of nested products through Arrow"):
+    case class Detail(name: String, count: Int) derives Encoder
+    case class Record(details: Seq[Detail]) derives Encoder
+    val encoder = Encoder[Record]
+    val input = Record(Seq(Detail("a", 1), Detail("b", 2)))
+    val result = roundTrip(encoder.schema, Seq(encoder.toRow(input).toSeq))
+    assertEquals(encoder.fromRow(result.toArray.head), input)
+
+  test("round-trips a nested array column") {
+    val schema = StructType(Array(StructField("grid", ArrayType(ArrayType(StringType)))))
+    val result = roundTrip(schema, Seq(Seq(Seq(Seq("a", "b"), Seq("c")))))
+    val decoded = result.toArray.head.getSeq[Seq[String]](0)
+    assertEquals(decoded.map(_.toSeq).toSeq, Seq(Seq("a", "b"), Seq("c")))
+  }
+
+  test("distinguishes a null list, an empty list, and a null element within a list") {
+    val schema = StructType(
+      Array(StructField("tags", ArrayType(StringType, containsNull = true), nullable = true))
+    )
+    val result = roundTrip(schema, Seq(Seq(null), Seq(Seq.empty), Seq(Seq("a", null))))
+    val rows = result.toArray
+    assert(rows(0).isNullAt(0))
+    assertEquals(rows(1).getSeq[String](0).toSeq, Seq.empty)
+    assertEquals(rows(2).getSeq[String](0).toSeq, Seq("a", null))
+  }
+
+  test("round-trips a map of struct values") {
+    // Two entries with distinct struct values: if the map decode read the row's global index
+    // instead of each entry's own position, both keys would decode to the same struct.
+    val person = StructType(Array(StructField("name", StringType), StructField("age", IntegerType)))
+    val schema = StructType(Array(StructField("people", MapType(StringType, person))))
+    val result =
+      roundTrip(schema, Seq(Seq(Map("alice" -> Seq("Alice", 30), "bob" -> Seq("Bob", 40)))))
+    val decoded = result.toArray.head.getMap[String, Row](0)
+    assertEquals(decoded("alice").getString(0), "Alice")
+    assertEquals(decoded("alice").getInt(1), 30)
+    assertEquals(decoded("bob").getString(0), "Bob")
+    assertEquals(decoded("bob").getInt(1), 40)
+  }
+
   test("reports an empty result with the declared schema") {
     val schema = StructType(Array(StructField("id", LongType)))
     val result = roundTrip(schema, Seq.empty)
