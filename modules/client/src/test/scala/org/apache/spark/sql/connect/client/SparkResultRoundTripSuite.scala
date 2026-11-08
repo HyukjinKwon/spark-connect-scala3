@@ -47,8 +47,23 @@ class SparkResultRoundTripSuite extends munit.FunSuite {
 
   override def munitFixtures: Seq[munit.Fixture[?]] = Seq(allocatorFixture)
 
+  /** Wraps `iter` as a [[CloseableIterator]], invoking `onClose` when closed. */
+  private def closeable[T](
+      iter: Iterator[T],
+      onClose: () => Unit = () => ()
+  ): CloseableIterator[T] =
+    new CloseableIterator[T] {
+      override def hasNext: Boolean = iter.hasNext
+      override def next(): T = iter.next()
+      override def close(): Unit = onClose()
+    }
+
   /** Encodes `rows` against `schema` and decodes them back through a fresh [[SparkResult]]. */
-  private def roundTrip(schema: StructType, rows: Seq[Seq[Any]]): SparkResult = {
+  private def roundTrip(
+      schema: StructType,
+      rows: Seq[Seq[Any]],
+      onClose: () => Unit = () => ()
+  ): SparkResult = {
     val allocator = allocatorFixture()
     val bytes = ArrowSerializer.serialize(rows, schema, allocator)
     val schemaResponse = proto
@@ -66,7 +81,7 @@ class SparkResultRoundTripSuite extends munit.FunSuite {
         proto.ExecutePlanResponse
           .ArrowBatch(rowCount = rows.size, data = ByteString.copyFrom(bytes))
       )
-    new SparkResult(Iterator(schemaResponse, batchResponse), allocator)
+    new SparkResult(closeable(Iterator(schemaResponse, batchResponse), onClose), allocator)
   }
 
   test("decodes the schema reported by the server") {
@@ -404,5 +419,28 @@ class SparkResultRoundTripSuite extends munit.FunSuite {
     assertEquals(result.length, 0)
     assertEquals(result.schema, schema)
     assert(!result.iterator.hasNext)
+  }
+
+  test("closes the execution exactly once after results are fully consumed") {
+    var closeCount = 0
+    val schema = StructType(Array(StructField("id", LongType)))
+    val result = roundTrip(schema, Seq(Seq(1L)), () => closeCount += 1)
+    result.toArray
+    result.toArray // a second read must not reprocess or re-close an already-closed execution.
+    assertEquals(closeCount, 1)
+  }
+
+  test("closes the execution when an Arrow batch fails to decode") {
+    var closeCount = 0
+    val corruptBatch = proto
+      .ExecutePlanResponse(sessionId = "s", serverSideSessionId = "")
+      .withArrowBatch(
+        proto.ExecutePlanResponse
+          .ArrowBatch(rowCount = 1, data = ByteString.copyFrom(Array[Byte](1, 2, 3)))
+      )
+    val result =
+      new SparkResult(closeable(Iterator(corruptBatch), () => closeCount += 1), allocatorFixture())
+    intercept[Exception](result.toArray)
+    assertEquals(closeCount, 1)
   }
 }
