@@ -25,7 +25,7 @@ import org.apache.spark.ml.MlRemoteSuite
 class FeatureTransformersIntegrationSuite extends MlRemoteSuite {
 
   private def firstVector(df: org.apache.spark.sql.DataFrame, name: String): Vector =
-    VectorUDT.deserialize(df.select(name).head().getStruct(0))
+    df.select(name).head().getAs[Vector](0)
 
   test("VectorAssembler builds a vector column from numeric columns") {
     withSpark { spark =>

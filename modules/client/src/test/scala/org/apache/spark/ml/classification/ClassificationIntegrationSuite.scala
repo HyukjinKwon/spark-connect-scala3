@@ -104,9 +104,10 @@ class ClassificationIntegrationSuite extends MlRemoteSuite {
   test("Vector results decode from Row values") {
     withSpark { spark =>
       val df = MlTestData.binary(spark)
-      val first: Vector =
-        org.apache.spark.ml.linalg.VectorUDT.deserialize(df.select("features").head().getStruct(0))
+      // Vector columns decode to Vector values in collected rows, as in Spark.
+      val first: Vector = df.select("features").head().getAs[Vector]("features")
       assertEquals(first.size, 2)
+      assertEquals(df.select("features").head().get(0).getClass.getSimpleName, "DenseVector")
     }
   }
 }
