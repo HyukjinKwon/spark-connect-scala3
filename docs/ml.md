@@ -71,6 +71,22 @@ model.write.overwrite().save("/tmp/lr-model")
 val loaded = LogisticRegressionModel.load("/tmp/lr-model")
 ```
 
+Composite models use Spark's standard layout, the one PySpark 4.3.0 writes over
+Connect, so they load in either client:
+
+- `Pipeline` and `PipelineModel`: `metadata` (with `stageUids`) and one directory per
+  stage, `stages/<index>_<uid>`, with the index zero-padded to the stage count.
+- `CrossValidator`/`CrossValidatorModel` and `TrainValidationSplit`/`TrainValidationSplitModel`:
+  `metadata` (with `estimatorParamMaps`, and `avgMetrics`, `stdMetrics` or
+  `validationMetrics`), `estimator`, `evaluator`, and `bestModel`. Sub-models are written
+  under `subModels/fold<i>/<j>` when `persistSubModels` is set.
+- `OneVsRest`/`OneVsRestModel`: `metadata` (with `numClasses` on the model),
+  `classifier`, and one `model_<i>` directory per class.
+
+Operators and models are written by the server in Spark's own format. Metadata
+is a JSON document with `class`, `timestamp`, `sparkVersion`, `uid`, `paramMap`
+and `defaultParamMap`. The client writes the same keys for the composite objects.
+
 ## Statistics and functions
 
 - `org.apache.spark.ml.stat.Correlation`, `ChiSquareTest`, and
@@ -80,54 +96,60 @@ val loaded = LogisticRegressionModel.load("/tmp/lr-model")
 - `org.apache.spark.ml.functions.vector_to_array` and `array_to_vector` convert
   between vector and array columns.
 
-## Implemented operators
+## Coverage
+
+The client covers every class the server allowlists, in the Spark 4.3.0
+`META-INF/services` files: 42 estimators, 61 transformers (models included) and 6
+evaluators. `AllowlistCoverageSuite` checks this against vendored copies of those
+files, so a missing class fails the unit tests.
 
 | Family | Operators |
 | ------ | --------- |
-| Classification | `LogisticRegression` (with binary and multiclass summaries), `LinearSVC`, `NaiveBayes` |
-| Regression | `LinearRegression` (with training summary) |
-| Clustering | `KMeans` (with training summary), `BisectingKMeans`, `GaussianMixture` |
-| Recommendation | `ALS` (factors and recommendations) |
-| Frequent patterns | `FPGrowth` |
-| Scalers and encoders | `StandardScaler`, `MinMaxScaler`, `MaxAbsScaler`, `StringIndexer`, `OneHotEncoder`, `Imputer` |
-| Text and counts | `Tokenizer`, `RegexTokenizer`, `StopWordsRemover`, `NGram`, `HashingTF`, `CountVectorizer`, `IDF` |
+| Classification | `LogisticRegression`, `LinearSVC`, `NaiveBayes`, `DecisionTreeClassifier`, `RandomForestClassifier`, `GBTClassifier`, `FMClassifier`, `MultilayerPerceptronClassifier`, `OneVsRest` |
+| Regression | `LinearRegression`, `DecisionTreeRegressor`, `RandomForestRegressor`, `GBTRegressor`, `FMRegressor`, `AFTSurvivalRegression`, `IsotonicRegression`, `GeneralizedLinearRegression` |
+| Clustering | `KMeans`, `BisectingKMeans`, `GaussianMixture`, `LDA` (local and distributed models), `PowerIterationClustering` |
+| Recommendation | `ALS` |
+| Frequent patterns | `FPGrowth`, `PrefixSpan` |
+| Scalers and encoders | `StandardScaler`, `MinMaxScaler`, `MaxAbsScaler`, `RobustScaler`, `StringIndexer`, `OneHotEncoder`, `VectorIndexer`, `TargetEncoder`, `QuantileDiscretizer`, `Imputer` |
+| Text and counts | `Tokenizer`, `RegexTokenizer`, `StopWordsRemover`, `NGram`, `HashingTF`, `CountVectorizer`, `IDF`, `Word2Vec` |
+| Feature selection | `ChiSqSelector`, `UnivariateFeatureSelector`, `VarianceThresholdSelector`, `PCA`, `RFormula` |
+| LSH | `BucketedRandomProjectionLSH`, `MinHashLSH` |
 | Vector and feature transformers | `VectorAssembler`, `VectorSlicer`, `VectorSizeHint`, `Interaction`, `FeatureHasher`, `Binarizer`, `Bucketizer`, `Normalizer`, `PolynomialExpansion`, `DCT`, `ElementwiseProduct`, `IndexToString`, `SQLTransformer` |
-| Dimensionality reduction | `PCA` |
 | Evaluators | `RegressionEvaluator`, `BinaryClassificationEvaluator`, `MulticlassClassificationEvaluator`, `ClusteringEvaluator`, `RankingEvaluator`, `MultilabelClassificationEvaluator` |
-| Tuning | `ParamGridBuilder`, `CrossValidator`, `CrossValidatorModel`, `TrainValidationSplit`, `TrainValidationSplitModel` |
-| Pipelines | `Pipeline`, `PipelineModel` |
-| Statistics | `Correlation`, `ChiSquareTest`, `KolmogorovSmirnovTest`, `Summarizer` |
+| Tuning and pipelines | `ParamGridBuilder`, `CrossValidator`, `TrainValidationSplit`, `Pipeline` (and their models) |
 
-Model attributes and methods are those the server allowlists for each model
-(`MLUtils.invokeMethodAllowed`), for example `coefficients`, `intercept`,
-`clusterCenters`, `predict`, `recommendForAllUsers`, `summary`, and `evaluate`
-where it is implemented.
+Model attributes, methods and summaries are wired from the server's allowlist
+(`MLUtils.invokeMethodAllowed`): for example `coefficients`, `featureImportances`,
+`trees`, `treeWeights`, `toDebugString`, `predictLeaf`, `evaluate`,
+`evaluateEachIteration`, `topicsMatrix`, `describeTopics`, `logLikelihood`,
+`approxNearestNeighbors`, `approxSimilarityJoin`, `findSynonyms`, `getVectors`,
+`selectedFeatures`, `categoryMapsDF`, and `summary`.
 
-## Not implemented yet
+Integration tests cover each family against a live 4.3.0 server.
 
-The server allowlists more operators than this client exposes. Not yet
-implemented:
+## Limitations
 
-- Estimators: decision trees, random forests, gradient-boosted trees, factorization
-  machines, multilayer perceptron, AFT survival regression, isotonic regression,
-  generalized linear regression, LDA, RFormula, RobustScaler, ChiSqSelector,
-  UnivariateFeatureSelector, VarianceThresholdSelector, VectorIndexer, Word2Vec,
-  TargetEncoder, and the LSH estimators (`BucketedRandomProjectionLSH`, `MinHashLSH`).
-  Their models are not exposed either.
-- Model methods for the implemented models that the server allowlists but this
-  client does not wrap, such as `evaluate` on `LinearSVC` and `NaiveBayes`, and
-  the `GetCacheInfo` and `GetModelSize` commands.
+- Models are released explicitly with `release()`. The client does not release them
+  when they are garbage collected.
+- `OneVsRest` is not on the server allowlist. The client runs one binary fit per
+  class on the server and does the argmax itself, as PySpark does over Connect.
+- Tree models returned by `trees` are handles to the server's objects with generated
+  client uids.
+- `LinearSVC.evaluate` and the other `evaluate` methods return the generic
+  `ClassificationSummary` (or `LinearRegressionTrainingSummary` and
+  `GeneralizedLinearRegressionTrainingSummary`), not Spark's per-model summary types.
+- `LDAModel.getCheckpointFiles` is not wrapped.
+- `PowerIterationClustering.assignClusters` and `PrefixSpan.findFrequentSequentialPatterns`
+  run through the server's ML helper, as PySpark does, so they are not estimators.
 
 ## Differences from Spark
 
 - Models are held on the server. `model.release()` evicts a model; the client does
   not release models when they are garbage collected.
-- Tuning runs its fits one after another, so `parallelism` is accepted but has no
-  effect. Folds use the same seeded `rand` split as PySpark.
-- `Pipeline`, `CrossValidator`, and `TrainValidationSplit` store their metadata as a
-  line-based text file, not PySpark's JSON layout, and their stage directories follow
-  Spark's `stages/<index>_<uid>` pattern. Tuning persists the parameter maps of the
-  top-level estimator only.
-- `StopWordsRemover` has no client-side default for `stopWords`; set it explicitly.
+- Tuning runs `parallelism` fits at once, with the same seeded `rand` split as PySpark.
+- `StopWordsRemover` defaults `stopWords` to Spark's English list, read from the server
+  when the default is needed.
 - `Summarizer` aliases its results by metric name (`mean`, `sum`, ...), not by the
   column expression.
+- Vector and matrix columns decode to `Vector` and `Matrix` values in collected rows,
+  and `show()` renders them as `[1.0,2.0]`.

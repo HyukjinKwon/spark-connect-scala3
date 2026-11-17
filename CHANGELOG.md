@@ -8,35 +8,30 @@ based on Keep a Changelog, and this project adheres to Semantic Versioning.
 ### Added
 
 - Spark ML over Spark Connect under `org.apache.spark.ml.*`, mirroring Apache
-  Spark's Scala ML API (requires a Spark Connect server 4.0 or newer):
+  Spark's Scala ML API (requires a Spark Connect server 4.0 or newer). Covers every
+  estimator (42), transformer and model (61), and evaluator (6) that the server
+  allowlists, checked against the Spark 4.3.0 `META-INF/services` files:
   - the params framework (`Param`, `ParamMap`, `ParamPair`, `Params`, shared
     params, `ParamGridBuilder`) with Spark's defaults and validators;
   - base classes `Estimator`, `Transformer`, `Model`, `Evaluator`, `Pipeline`,
-    `PipelineModel`, and `PipelineStage`, with `fit`, `transform`, `evaluate`,
-    `copy`, and `explainParams`;
-  - estimators `LogisticRegression` (with binary and multiclass summaries),
-    `LinearSVC`, `NaiveBayes`, `LinearRegression`, `KMeans`, `BisectingKMeans`,
-    `GaussianMixture`, `ALS`, `FPGrowth`, `StandardScaler`, `MinMaxScaler`,
-    `MaxAbsScaler`, `StringIndexer`, `OneHotEncoder`, `Imputer`, `PCA`, `IDF`, and
-    `CountVectorizer`, with their models and model attributes;
-  - 18 feature transformers, among them `VectorAssembler`, `Tokenizer`,
-    `RegexTokenizer`, `Binarizer`, `Bucketizer`, `NGram`, `HashingTF`, `StopWordsRemover`,
-    `PolynomialExpansion`, and `SQLTransformer`;
-  - six evaluators: `RegressionEvaluator`, `BinaryClassificationEvaluator`,
-    `MulticlassClassificationEvaluator`, `ClusteringEvaluator`, `RankingEvaluator`,
-    and `MultilabelClassificationEvaluator`;
-  - `CrossValidator`, `TrainValidationSplit`, and their models, with the folds run
-    from the client as PySpark does over Connect;
+    `PipelineModel`, and `PipelineStage`;
+  - classification, regression, clustering, recommendation, frequent-pattern,
+    feature and LSH operators with their models, summaries, and `evaluate`;
+    `OneVsRest`; `LDA`; `PowerIterationClustering`; `PrefixSpan`;
+  - six evaluators; `CrossValidator`, `TrainValidationSplit` (with `parallelism`),
+    and their models;
   - persistence (`save`, `write.overwrite()`, `load`) for operators, models,
-    pipelines, and tuning models;
+    pipelines, and tuning models, in Spark's standard format, verified against
+    PySpark 4.3.0 in both directions;
   - `org.apache.spark.ml.linalg`: `Vector`, `DenseVector`, `SparseVector`,
-    `Vectors`, `Matrix`, `DenseMatrix`, `SparseMatrix`, and `Matrices`, with the
-    `VectorUDT` and `MatrixUDT` codecs for result rows;
+    `Vectors`, `Matrix`, `DenseMatrix`, `SparseMatrix`, and `Matrices`. Vector and
+    matrix columns decode to these types in collected rows, and render in `show()`;
   - `org.apache.spark.ml.stat` (`Correlation`, `ChiSquareTest`,
     `KolmogorovSmirnovTest`, `Summarizer`) and `org.apache.spark.ml.functions`
     (`vector_to_array`, `array_to_vector`);
-  - server-side model cache release through `Model.release()`, and eviction on
-    session close (on servers 4.1 or newer).
+  - `StopWordsRemover` defaults to Spark's English stop words from the server;
+  - model cache release through `Model.release()`, eviction on session close, and
+    `estimatedSize` (server 4.1 or newer).
 - A machine learning guide (`docs/ml.md`) and the `MachineLearning` example.
 
 ## [0.4.0] - 2026-11-04

@@ -129,12 +129,13 @@ entirely on the client, so no closure is sent to the server.
 ### Machine learning
 
 Spark ML runs over Spark Connect under `org.apache.spark.ml.*`, mirroring Apache
-Spark's Scala ML API: the params framework, estimators, transformers, models,
-evaluators, pipelines, `CrossValidator` and `TrainValidationSplit`, persistence,
+Spark's Scala ML API: the params framework, every estimator, transformer, model and
+evaluator the server allowlists, pipelines, `OneVsRest`, `CrossValidator` and
+`TrainValidationSplit`, persistence in Spark's format (readable by PySpark),
 `org.apache.spark.ml.linalg`, and the `stat` and `functions` helpers. Fitting and
 evaluation run on the server, which needs Spark Connect 4.0 or newer. See the
 [Machine learning guide](https://hyukjinkwon.github.io/spark-connect-scala3/ml/) for
-the operators covered and the ones not yet implemented.
+the operators and the limitations.
 
 ### Plugin extensions
 
@@ -161,7 +162,6 @@ Also out of scope because they are not part of the Spark Connect protocol at all
 
 - The RDD API (`Dataset.rdd`, `SparkContext`, accumulators, broadcast variables)
   and other in-process JVM state (`queryExecution`, `sessionState`).
-- ML operators not yet implemented; see the Machine learning guide.
 - Artifact upload (`addArtifact(s)`), which only matters for shipping UDF code.
 
 Class and method names otherwise match Apache Spark's Scala API, so existing Spark

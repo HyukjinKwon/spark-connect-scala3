@@ -24,7 +24,7 @@ are no surprises.
 | Catalog | `spark.catalog` with typed listings (`Dataset[CatalogMetadata]`, `Dataset[Database]`, `Dataset[Table]`, `Dataset[Column]`, `Dataset[Function]`, `Dataset[TablePartition]`) and patterns: catalogs, databases, tables, views, columns, functions, and partitions; existence checks and getters; `createTable`/`createExternalTable` (eager); `createDatabase`/`dropDatabase`/`dropTable`/`dropView`/`truncateTable`/`analyzeTable`/`getTableProperties`/`getCreateTableString`; temp-view drops; cache management (including a storage level) |
 | Structured Streaming | `DataStreamReader` (including `name`, `changes`, `textFile`, `xml`) and `DataStreamWriter` (including `clusterBy`), `OutputMode`, triggers (`ProcessingTime`/`Once`/`AvailableNow`/`Continuous`/`RealTime`), `start`/`toTable`, `StreamingQuery`, `StreamingQueryManager`, and `StreamingQueryListener` registration (`addListener`/`removeListener`/`listListeners`) with client-side event dispatch |
 | Declarative Pipelines | build graphs of tables, materialized views, temporary views, sinks, flows, and Auto CDC flows, then run them on the server |
-| Machine learning | `org.apache.spark.ml.*` over Connect (server 4.0+): params, pipelines, 18 estimators with their models, 18 transformers, 6 evaluators, `CrossValidator` and `TrainValidationSplit`, persistence, `linalg`, `stat`, and `functions`. See the [Machine learning guide](ml.md) for the list and the operators not yet implemented |
+| Machine learning | `org.apache.spark.ml.*` over Connect (server 4.0+): params, pipelines, every estimator (42), transformer and model (61) and evaluator (6) that the server allowlists, `CrossValidator`, `TrainValidationSplit`, `OneVsRest`, persistence in Spark's format, `linalg`, `stat`, and `functions`. See the [Machine learning guide](ml.md) for the list and the limitations |
 | Plugin extensions | build a `Relation.extension` from a packed protobuf message (`SparkSession.newDataFrame`/`newRelation`, `Dataset.relation`/`plan`) for server-side `RelationPlugin`s such as GraphFrames |
 | Typed Datasets | `as[T]`, `createDataset`, `emptyDataset`, typed `range`, typed `select`, `joinWith`, and typed catalog listings, with compile-time `Encoder` derivation for case classes, tuples, primitives (and their boxed Java forms), `java.time` values, `Option`, collections, and maps, plus the `Encoders` factories (`Encoders.product`, `Encoders.tuple`, `Encoders.STRING`, ...); typed actions return `T` |
 | Observation | `Observation` for collecting named aggregate metrics while a query runs (`get`/`getAsJava`); errors the server reports for the metrics are raised from `get` |
@@ -58,9 +58,6 @@ These are deliberately out of scope.
   Spark driver.
 - **Artifact upload (`addArtifact(s)`).** Shipping local JARs/files to the server
   is only needed for UDF code.
-- **ML operators not yet implemented.** The Spark ML operators in the
-  [Machine learning](ml.md) guide's "Not implemented yet" list (trees, ensembles,
-  and the other estimators listed there).
 - **Classic-only builder settings.** `Builder.master` and
   `Builder.enableHiveSupport` are accepted for source compatibility but do
   nothing, as in Apache Spark's Connect client.
