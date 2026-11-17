@@ -45,8 +45,8 @@ trait StopWordsRemoverParams extends HasInputCol with HasOutputCol {
 
   setDefault(caseSensitive -> false, locale -> "en_US")
 
+  def getStopWords: Array[String] = get(stopWords).getOrElse(StopWordsDefaults.english())
   def setStopWords(value: Array[String]): this.type = set(stopWords, value)
-  def getStopWords: Array[String] = $(stopWords)
 
   def setCaseSensitive(value: Boolean): this.type = set(caseSensitive, value)
   def getCaseSensitive: Boolean = $(caseSensitive)

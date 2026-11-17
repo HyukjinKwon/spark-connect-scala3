@@ -475,8 +475,12 @@ class SparkSession private[sql] (private[sql] val client: SparkConnectClient)
   override def close(): Unit = {
     try {
       // Evict the ML models this session cached on the server, as PySpark does on exit.
-      // CleanCache exists from server 4.1; older servers evict when the session is released.
-      if (mlCacheUsed && connect.ml.MlClient.supports(this, 4, 1)) {
+      // CleanCache exists from server 4.1; older servers evict when the session is released. The
+      // version is read from what earlier ML commands learned, so closing never makes a round trip.
+      val mlSupportsCleanCache = connect.ml.MlClient.knownVersion(this).exists { case (ma, mi) =>
+        ma > 4 || (ma == 4 && mi >= 1)
+      }
+      if (mlCacheUsed && mlSupportsCleanCache && !client.channel.isShutdown) {
         try connect.ml.MlClient.cleanCache(this)
         catch { case NonFatal(_) => /* best effort: the server also evicts on session release */ }
       }

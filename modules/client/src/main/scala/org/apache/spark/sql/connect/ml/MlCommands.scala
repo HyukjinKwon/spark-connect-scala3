@@ -121,6 +121,18 @@ private[spark] object MlCommands {
   def cleanCache: proto.MlCommand =
     proto.MlCommand(command = proto.MlCommand.Command.CleanCache(proto.MlCommand.CleanCache()))
 
+  /** `GetModelSize`: the estimated in-memory size of a cached model. */
+  def getModelSize(modelRef: String): proto.MlCommand =
+    proto.MlCommand(command =
+      proto.MlCommand.Command.GetModelSize(
+        proto.MlCommand.GetModelSize(modelRef = Some(proto.ObjectRef(modelRef)))
+      )
+    )
+
+  /** `GetCacheInfo`: a description of the ML objects cached in the session. */
+  def getCacheInfo: proto.MlCommand =
+    proto.MlCommand(command = proto.MlCommand.Command.GetCacheInfo(proto.MlCommand.GetCacheInfo()))
+
   /** `CreateSummary`: recreates a model summary that was lost from the cache. */
   def createSummary(modelRef: String, dataset: proto.Relation): proto.MlCommand =
     proto.MlCommand(command =

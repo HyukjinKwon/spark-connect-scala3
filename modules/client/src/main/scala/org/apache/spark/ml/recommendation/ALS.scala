@@ -273,6 +273,9 @@ class ALSModel private[ml] (override val uid: String, private[ml] val ref: Model
 
   override def release(): Unit = ref.release()
 
+  /** The estimated in-memory size of this model on the server, in bytes (server 4.1+). */
+  def estimatedSize: Long = RemoteOps.modelSize(ref)
+
   override def write: MLWriter = new MLWriter(this)
 }
 

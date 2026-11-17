@@ -88,6 +88,9 @@ private[ml] object RemoteOps {
     estimator.copyValues(model)
   }
 
+  /** The estimated in-memory size of a cached model, in bytes (server 4.1 or newer). */
+  def modelSize(ref: ModelRef): Long = MlClient.modelSize(ref.session, ref.id)
+
   /** A handle to the server's ML helper object, which hosts the stat functions. */
   private[ml] def helperRef(session: SparkSession): ModelRef =
     new ModelRef(HelperId, session, None)

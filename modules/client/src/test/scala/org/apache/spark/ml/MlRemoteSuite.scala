@@ -27,5 +27,11 @@ import org.apache.spark.sql.{RemoteSparkSuite, SparkSession}
 abstract class MlRemoteSuite extends RemoteSparkSuite {
 
   override protected def withSpark(body: SparkSession => Unit): Unit =
-    if (serverAtLeast(4, 0)) body(spark)
+    if (serverAtLeast(4, 0)) {
+      // Make this suite's session the active one on this thread. Loads and saves use the active
+      // session, and suites run concurrently, so the thread's previous session may belong to another
+      // suite.
+      SparkSession.setActiveSession(spark)
+      body(spark)
+    }
 }

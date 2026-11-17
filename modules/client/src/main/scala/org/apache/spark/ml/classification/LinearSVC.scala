@@ -135,6 +135,16 @@ class LinearSVCModel private[ml] (override val uid: String, private[ml] val ref:
   /** Model attribute `intercept`, read from the server. */
   def intercept: Double = attr[Double]("intercept")
 
+  /** Evaluates the model on `dataset`, returning a summary of the predictions. */
+
+  def evaluate(dataset: Dataset[_]): ClassificationSummary = {
+
+    val summaryId = RemoteOps.fetch(ref, Seq("evaluate"), Seq(dataset)).asInstanceOf[String]
+
+    new ClassificationSummary(new ModelRef(summaryId, ref.session, None), Nil)
+
+  }
+
   override def copy(extra: ParamMap): LinearSVCModel =
     copyValues(new LinearSVCModel(uid, ref.retain()), extra)
 
@@ -142,6 +152,9 @@ class LinearSVCModel private[ml] (override val uid: String, private[ml] val ref:
     RemoteOps.transformWithModel(this, ref, dataset)
 
   override def release(): Unit = ref.release()
+
+  /** The estimated in-memory size of this model on the server, in bytes (server 4.1+). */
+  def estimatedSize: Long = RemoteOps.modelSize(ref)
 
   override def write: MLWriter = new MLWriter(this)
 }

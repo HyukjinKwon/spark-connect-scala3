@@ -172,6 +172,16 @@ class LinearRegressionModel private[ml] (override val uid: String, private[ml] v
   def summary: LinearRegressionTrainingSummary =
     new LinearRegressionTrainingSummary(ref, Seq("summary"))
 
+  /** Evaluates the model on `dataset`, returning a summary of the predictions. */
+
+  def evaluate(dataset: Dataset[_]): LinearRegressionTrainingSummary = {
+
+    val summaryId = RemoteOps.fetch(ref, Seq("evaluate"), Seq(dataset)).asInstanceOf[String]
+
+    new LinearRegressionTrainingSummary(new ModelRef(summaryId, ref.session, None), Nil)
+
+  }
+
   override def copy(extra: ParamMap): LinearRegressionModel =
     copyValues(new LinearRegressionModel(uid, ref.retain()), extra)
 
@@ -179,6 +189,9 @@ class LinearRegressionModel private[ml] (override val uid: String, private[ml] v
     RemoteOps.transformWithModel(this, ref, dataset)
 
   override def release(): Unit = ref.release()
+
+  /** The estimated in-memory size of this model on the server, in bytes (server 4.1+). */
+  def estimatedSize: Long = RemoteOps.modelSize(ref)
 
   override def write: MLWriter = new MLWriter(this)
 }

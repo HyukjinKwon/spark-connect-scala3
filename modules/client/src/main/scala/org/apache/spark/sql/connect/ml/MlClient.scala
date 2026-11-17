@@ -18,6 +18,7 @@ package org.apache.spark.sql.connect.ml
 
 import org.apache.spark.connect.proto
 import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.connect.common.LiteralValueProtoConverter
 
 /**
  * Sends ML commands and ML relations to the server, mirroring the PySpark ML Connect client
@@ -42,6 +43,13 @@ private[spark] object MlClient {
     svMajor > major || (svMajor == major && svMinor >= minor)
   }
 
+  /**
+   * The server version of `session` if an earlier ML command already learned it. Never makes a
+   * round trip, so it is safe on a session that is closing.
+   */
+  def knownVersion(session: SparkSession): Option[(Int, Int)] =
+    versions.synchronized(Option(versions.get(session)))
+
   /** Fails with a clear message when the server is older than `major.minor`. */
   def requireVersion(session: SparkSession, major: Int, minor: Int, feature: String): Unit =
     if (!supports(session, major, minor)) {
@@ -51,9 +59,28 @@ private[spark] object MlClient {
       )
     }
 
+  // The session that ran the latest ML command. Used when no active session is usable.
+  @volatile private var lastSession: java.lang.ref.WeakReference[SparkSession] = null
+
+  /**
+   * The session ML persistence and loading should use: the active session when its connection is
+   * still open, otherwise the session of the latest ML command. `SparkSession.active` is a
+   * thread-local, so it can name a session that another thread has closed, and a call on that
+   * session would wait out the client's retries.
+   */
+  def currentSession(): SparkSession = {
+    val active =
+      try Some(SparkSession.active)
+      catch { case _: IllegalStateException => None }
+    val open = (active.toSeq ++ Option(lastSession).flatMap(r => Option(r.get())).toSeq)
+      .find(s => !s.client.channel.isShutdown)
+    open.getOrElse(throw new IllegalStateException("No open Spark session for the ML operation."))
+  }
+
   /** Runs `command` and returns the `MlCommandResult` the server sends back. */
   def run(session: SparkSession, command: proto.MlCommand): proto.MlCommandResult = {
     requireVersion(session, 4, 0, "Spark ML over Spark Connect")
+    lastSession = new java.lang.ref.WeakReference(session)
     session.mlCacheUsed = true
     val responses = session.client.execute(MlCommands.plan(command))
     try {
@@ -142,6 +169,20 @@ private[spark] object MlClient {
   /** Recreates a lost model summary from `dataset`. */
   def createSummary(session: SparkSession, modelRef: String, dataset: proto.Relation): Unit =
     run(session, MlCommands.createSummary(modelRef, dataset))
+
+  /** The estimated in-memory size of the cached model `id`, in bytes. Needs server 4.1 or newer. */
+  def modelSize(session: SparkSession, id: String): Long = {
+    requireVersion(session, 4, 1, "Model size")
+    val literal = run(session, MlCommands.getModelSize(id)).getParam
+    LiteralValueProtoConverter.toScalaValue(literal).asInstanceOf[Number].longValue()
+  }
+
+  /** A description of the ML objects cached in the session. Needs server 4.1 or newer. */
+  def cacheInfo(session: SparkSession): String = {
+    requireVersion(session, 4, 1, "ML cache information")
+    val literal = run(session, MlCommands.getCacheInfo).getParam
+    LiteralValueProtoConverter.toScalaValue(literal).toString
+  }
 
   private def relation(session: SparkSession, mlRelation: proto.MlRelation): DataFrame =
     session.newDataFrame(proto.Relation.RelType.MlRelation(mlRelation))
