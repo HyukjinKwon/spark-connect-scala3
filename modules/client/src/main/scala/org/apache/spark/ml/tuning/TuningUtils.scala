@@ -16,18 +16,21 @@
  */
 package org.apache.spark.ml.tuning
 
-import java.util.Base64
+import java.util.concurrent.{ExecutorService, Executors}
 
-import org.apache.spark.connect.proto
-import org.apache.spark.ml.{Estimator, Model, PipelineIO}
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.duration.Duration
+
+import org.apache.spark.ml.{Estimator, Model, PipelineStage, Transformer}
 import org.apache.spark.ml.evaluation.Evaluator
 import org.apache.spark.ml.connect.MlSerializer
 import org.apache.spark.ml.param.{Param, ParamMap, Params}
+import org.apache.spark.ml.util.{DefaultParams, Json, MLWritable, MLWriter}
 import org.apache.spark.sql.{DataFrame, Dataset}
 import org.apache.spark.sql.functions.{col, lit, rand}
 
-/** Helpers shared by the tuning estimators: fold splitting and parameter-map persistence. */
-private[tuning] object TuningUtils {
+/** Helpers shared by the tuning estimators: fold splitting, parallel runs and Spark's format. */
+private[ml] object TuningUtils {
 
   /**
    * Splits `dataset` into `numFolds` (train, validation) pairs. Without `foldCol`, each row gets a
@@ -59,41 +62,174 @@ private[tuning] object TuningUtils {
     }
   }
 
-  /** Encodes each parameter map as a base64 `MlParams` proto, one line per map. */
-  def encodeParamMaps(maps: Seq[ParamMap]): Seq[String] =
-    maps.map { m =>
-      val bytes = MlSerializer.encodeParamMap(m).toByteArray
-      "epm\t" + Base64.getEncoder.encodeToString(bytes)
+  /** Runs `tasks` on a pool of `parallelism` threads and returns their results in order. */
+  def runParallel[T](parallelism: Int)(tasks: Seq[() => T]): Seq[T] = {
+    val pool: ExecutorService = Executors.newFixedThreadPool(math.max(1, parallelism))
+    implicit val ec: ExecutionContext = ExecutionContext.fromExecutorService(pool)
+    try
+      Await.result(Future.sequence(tasks.map(t => Future(t()))), Duration.Inf)
+    finally
+      pool.shutdown()
+  }
+
+  /** The params of `root` and of every stage nested in it, keyed by uid. */
+  def uidMap(root: Params): Map[String, Params] = {
+    val nested: Seq[Params] = root match {
+      case p: org.apache.spark.ml.Pipeline => p.getStages.toSeq
+      case p: org.apache.spark.ml.PipelineModel => p.stages.toSeq
+      case p: CrossValidator => Seq(p.getEstimator, p.getEvaluator).collect { case x: Params => x }
+      case p: TrainValidationSplit =>
+        Seq(p.getEstimator, p.getEvaluator).collect { case x: Params => x }
+      case _ => Nil
     }
+    (Seq(root) ++ nested.flatMap(n => uidMap(n).values)).map(p => p.uid -> p).toMap
+  }
 
-  /** Decodes parameter maps written by [[encodeParamMaps]], resolving names against `owner`. */
-  def decodeParamMaps(owner: Params, lines: Seq[String]): Array[ParamMap] =
-    lines.map { line =>
-      val encoded = line.split("\t", -1)(1)
-      val params = proto.MlParams.parseFrom(Base64.getDecoder.decode(encoded))
-      val map = new ParamMap()
-      MlSerializer.decodeParams(params).foreach { case (name, value) =>
-        val p = owner.getParam(name).asInstanceOf[Param[Any]]
-        map.put(p, value)
-      }
-      map
-    }.toArray
+  /**
+   * Writes a validator's metadata, its evaluator and estimator, and any param values that are
+   * stages (saved as `epm_<name><n>` directories). Mirrors `ValidatorParams.saveImpl`.
+   */
+  def saveValidator(
+      path: String,
+      uid: String,
+      className: String,
+      paramMap: ParamMap,
+      estimator: Params,
+      evaluator: Params,
+      epms: Seq[ParamMap],
+      overwrite: Boolean,
+      extra: Seq[(String, Json.Value)]
+  ): Unit = {
+    var numParamsNotJson = 0
+    val epmJson = epms.map { map =>
+      Json.Arr(map.toSeq.map { pair =>
+        val name = pair.param.name
+        val base = Seq("parent" -> Json.Str(pair.param.parent), "name" -> Json.Str(name))
+        pair.value match {
+          case s: Params with MLWritable if isStage(s) =>
+            val relative = s"epm_$name$numParamsNotJson"
+            numParamsNotJson += 1
+            saveStage(s, s"$path/$relative", overwrite)
+            Json.Obj(base ++ Seq("value" -> Json.Str(relative), "isJson" -> Json.Str("false")))
+          case v =>
+            val encoded = DefaultParams
+              .encodeParam(v)
+              .getOrElse(
+                throw new IllegalArgumentException(s"Cannot save param ${pair.param} value $v")
+              )
+            Json.Obj(
+              base ++ Seq("value" -> Json.Str(Json.render(encoded)), "isJson" -> Json.Str("true"))
+            )
+        }
+      })
+    }
+    val skip = Set("estimator", "evaluator", "estimatorParamMaps")
+    val paramMapJson = DefaultParams.paramMapJson(paramMap, skip) match {
+      case Json.Obj(fs) => Json.Obj(fs ++ Seq("estimatorParamMaps" -> Json.Arr(epmJson)))
+    }
+    DefaultParams.save(uid, className, ParamMap.empty, path, overwrite, paramMapJson, extra)
+    saveStage(evaluator, s"$path/evaluator", overwrite)
+    saveStage(estimator, s"$path/estimator", overwrite)
+  }
 
-  /** Writes a tuning object's sub-stage (`estimator`, `evaluator`, or a model) under `root`. */
+  /** Whether `v` is an estimator, transformer or evaluator (a stage, not a plain value). */
+  private def isStage(v: Any): Boolean =
+    v.isInstanceOf[Estimator[_]] || v.isInstanceOf[Transformer] || v.isInstanceOf[Evaluator]
+
+  /** Saves `stage` to `path`, with the overwrite policy of the enclosing save. */
   def saveStage(stage: Params, path: String, overwrite: Boolean): Unit = stage match {
-    case w: org.apache.spark.ml.util.MLWritable =>
-      if (overwrite) w.write.overwrite().save(path) else w.save(path)
+    case w: MLWritable => if (overwrite) w.write.overwrite().save(path) else w.write.save(path)
     case other => throw new IllegalArgumentException(s"${other.getClass.getName} is not writable.")
   }
 
-  /** Loads a stage by class name, from the directory `path`. */
-  def loadStage(className: String, path: String): Params =
-    PipelineIO.loadStage(className, path).asInstanceOf[Params]
+  /** Loads the metadata-recorded stage at `path`. */
+  def loadStage(path: String): Params = DefaultParams.loadInstance(path).asInstanceOf[Params]
 
-  /** Sum of (metric) values as a string of space-separated doubles, for metadata. */
-  def joinDoubles(values: Seq[Double]): String = values.mkString(" ")
+  /** The result of loading a validator: its metadata, estimator, evaluator and param maps. */
+  final case class Loaded(
+      meta: DefaultParams.Metadata,
+      estimator: Estimator[_],
+      evaluator: Evaluator,
+      paramMaps: Array[ParamMap]
+  )
 
-  /** Parses [[joinDoubles]] output. */
-  def splitDoubles(text: String): Array[Double] =
-    if (text.trim.isEmpty) Array.empty[Double] else text.trim.split(" ").map(_.toDouble)
+  /** Loads a validator saved by [[saveValidator]] or by PySpark's `ValidatorSharedReadWrite`. */
+  def loadValidator(path: String): Loaded = {
+    val meta = DefaultParams.load(path)
+    val evaluator = loadStage(s"$path/evaluator").asInstanceOf[Evaluator]
+    val estimator = loadStage(s"$path/estimator").asInstanceOf[Estimator[_]]
+    val uidToParams = uidMap(estimator) + (evaluator.uid -> evaluator)
+    val epmJson = meta.paramMap.get("estimatorParamMaps") match {
+      case Some(Json.Arr(vs)) => vs
+      case _ => Nil
+    }
+    val maps = epmJson.map {
+      case Json.Arr(pairs) =>
+        val map = new ParamMap()
+        pairs.foreach { case pair: Json.Obj =>
+          val owner = uidToParams.getOrElse(
+            pair.getStr("parent"),
+            throw new IllegalArgumentException(s"Unknown parent ${pair.getStr("parent")}")
+          )
+          val param = owner.getParam(pair.getStr("name")).asInstanceOf[Param[Any]]
+          val isJson = pair.get("isJson") match {
+            case Some(Json.Bool(b)) => b
+            case Some(Json.Str(s)) => s.toBoolean
+            case _ => true
+          }
+          if (isJson) {
+            val text = pair.getStr("value")
+            map.put(param, DefaultParams.decodeParam(param, Json.parse(text)))
+          } else {
+            val rel = pair.getStr("value")
+            map.put(param, loadStage(s"$path/$rel"))
+          }
+        }
+        map
+      case _ => new ParamMap()
+    }.toArray
+    Loaded(meta, estimator, evaluator, maps)
+  }
+
+  /** Writes `path/<name>` for each non-empty sub-model directory, as persistSubModels does. */
+  def saveSubModels(path: String, subModels: Array[Array[Model[_]]], overwrite: Boolean): Unit =
+    subModels.zipWithIndex.foreach { case (models, fold) =>
+      models.zipWithIndex.foreach { case (m, index) =>
+        saveStage(m, s"$path/subModels/fold$fold/$index", overwrite)
+      }
+    }
+
+  /** Loads sub-models saved by [[saveSubModels]]. */
+  def loadSubModels(path: String, folds: Int, maps: Int): Array[Array[Model[_]]] =
+    Array.tabulate(folds, maps)((fold, index) =>
+      loadStage(s"$path/subModels/fold$fold/$index").asInstanceOf[Model[_]]
+    )
+
+  /** The JSON array of doubles, for metric fields. */
+  def doubles(values: Seq[Double]): Json.Value =
+    Json.Arr(values.map(v => Json.Num(v.toString)))
+
+  /** Parses a JSON array of doubles. */
+  def parseDoubles(v: Option[Json.Value]): Array[Double] = v match {
+    case Some(Json.Arr(vs)) => vs.collect { case Json.Num(t) => t.toDouble }.toArray
+    case _ => Array.empty[Double]
+  }
+
+  /**
+   * The params a fitted tuning model records: those its PySpark counterpart defines. Spark's Scala
+   * model also records `parallelism` and `collectSubModels`, which the Python model does not
+   * define, so they are left out to keep the metadata loadable by PySpark's model reader.
+   */
+  def modelParams(model: Params): ParamMap = {
+    val keep = Set("numFolds", "foldCol", "seed", "trainRatio")
+    ParamMap(model.extractParamMap().toSeq.filter(p => keep.contains(p.param.name))*)
+  }
+
+  /** Whether the metadata records the `persistSubModels` option. */
+  def persistSubModels(meta: DefaultParams.Metadata): Boolean =
+    meta.raw.get("persistSubModels").exists {
+      case Json.Bool(b) => b
+      case Json.Str(s) => s.toBoolean
+      case _ => false
+    }
 }

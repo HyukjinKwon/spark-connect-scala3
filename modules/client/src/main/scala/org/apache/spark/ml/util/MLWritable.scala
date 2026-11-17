@@ -46,6 +46,9 @@ class MLWriter(protected val instance: Params) {
     this
   }
 
+  /** The value of a writer option, if set. */
+  private[ml] def optionValue(key: String): Option[String] = optionMap.get(key)
+
   /** Whether [[overwrite]] was requested. */
   private[ml] def isOverwrite: Boolean = shouldOverwrite
 

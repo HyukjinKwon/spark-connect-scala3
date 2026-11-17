@@ -20,7 +20,14 @@ import org.apache.spark.ml.{Estimator, Model}
 import org.apache.spark.ml.evaluation.Evaluator
 import org.apache.spark.ml.param._
 import org.apache.spark.ml.param.shared._
-import org.apache.spark.ml.util.{Identifiable, MLReadable, MLWritable, MLWriter}
+import org.apache.spark.ml.util.{
+  DefaultParams,
+  Identifiable,
+  Json,
+  MLReadable,
+  MLWritable,
+  MLWriter
+}
 import org.apache.spark.sql.{DataFrame, Dataset}
 import org.apache.spark.sql.functions.{col, lit, rand}
 
@@ -47,7 +54,7 @@ trait TrainValidationSplitParams extends Params with HasSeed with HasCollectSubM
     ParamValidators.inRange(0.0, 1.0)
   )
 
-  /** The number of threads for parallel fits. Fits run one after another in this client. */
+  /** The number of fits to run at once. */
   final val parallelism: IntParam = new IntParam(
     this,
     "parallelism",
@@ -98,19 +105,26 @@ class TrainValidationSplit(override val uid: String)
     val est = $(estimator)
     val epm = $(estimatorParamMaps)
     val eva = $(evaluator)
-    val numModels = epm.length
     val randCol = uid + "_rand"
     val withRand = dataset.toDF().select(col("*"), rand($(seed)).alias(randCol))
     val ratio = $(trainRatio)
     val train = withRand.filter(col(randCol) < lit(ratio)).drop(randCol)
     val validation = withRand.filter(col(randCol) >= lit(ratio)).drop(randCol)
-    val metrics = new Array[Double](numModels)
-    val subModels: Array[Model[_]] =
-      if ($(collectSubModels)) new Array[Model[_]](numModels) else null
-    epm.zipWithIndex.foreach { case (paramMap, j) =>
-      val model = est.fit(train, paramMap).asInstanceOf[Model[_]]
-      metrics(j) = eva.evaluate(model.transform(validation, paramMap))
-      if (subModels != null) subModels(j) = model else model.release()
+    val collect = $(collectSubModels)
+    val tasks = epm.zipWithIndex.map { case (paramMap, j) =>
+      () => {
+        val model = est.fit(train, paramMap).asInstanceOf[Model[_]]
+        val metric = eva.evaluate(model.transform(validation, paramMap))
+        if (!collect) model.release()
+        (j, metric, model)
+      }
+    }
+    val results = TuningUtils.runParallel($(parallelism))(tasks)
+    val metrics = new Array[Double](epm.length)
+    val subModels: Array[Model[_]] = if (collect) new Array[Model[_]](epm.length) else null
+    results.foreach { case (j, metric, model) =>
+      metrics(j) = metric
+      if (subModels != null) subModels(j) = model
     }
     val bestIndex =
       if (eva.isLargerBetter) metrics.zipWithIndex.maxBy(_._1)._2
@@ -128,27 +142,12 @@ class TrainValidationSplit(override val uid: String)
 object TrainValidationSplit extends MLReadable[TrainValidationSplit] {
 
   override def load(path: String): TrainValidationSplit = {
-    val lines = org.apache.spark.ml.PipelineIO.readLines(path)
-    val uid = lines.collectFirst { case Seq("uid", u) => u }.get
-    val tvs = new TrainValidationSplit(uid)
-    val est = TuningUtils.loadStage(
-      lines.collectFirst { case Seq("estimatorClass", c) => c }.get,
-      s"$path/estimator"
-    )
-    val eva = TuningUtils.loadStage(
-      lines.collectFirst { case Seq("evaluatorClass", c) => c }.get,
-      s"$path/evaluator"
-    )
-    tvs.set(tvs.estimator, est.asInstanceOf[Estimator[_]])
-    tvs.set(tvs.evaluator, eva.asInstanceOf[Evaluator])
-    tvs.set(
-      tvs.estimatorParamMaps,
-      TuningUtils.decodeParamMaps(
-        est,
-        lines.filter(_.headOption.contains("epm")).map(_.mkString("\t"))
-      )
-    )
-    tvs.set(tvs.trainRatio, lines.collectFirst { case Seq("trainRatio", v) => v.toDouble }.get)
+    val loaded = TuningUtils.loadValidator(path)
+    val tvs = new TrainValidationSplit(loaded.meta.uid)
+    DefaultParams.getAndSetParams(tvs, loaded.meta, Set("estimatorParamMaps"))
+    tvs.set(tvs.estimator, loaded.estimator)
+    tvs.set(tvs.evaluator, loaded.evaluator)
+    tvs.set(tvs.estimatorParamMaps, loaded.paramMaps)
     tvs
   }
 }
@@ -190,74 +189,73 @@ class TrainValidationSplitModel private[ml] (
 object TrainValidationSplitModel extends MLReadable[TrainValidationSplitModel] {
 
   override def load(path: String): TrainValidationSplitModel = {
-    val lines = org.apache.spark.ml.PipelineIO.readLines(path)
-    val uid = lines.collectFirst { case Seq("uid", u) => u }.get
-    val best = TuningUtils.loadStage(
-      lines.collectFirst { case Seq("bestModelClass", c) => c }.get,
-      s"$path/bestModel"
-    )
+    val loaded = TuningUtils.loadValidator(path)
+    val meta = loaded.meta
+    val bestModel = TuningUtils.loadStage(s"$path/bestModel").asInstanceOf[Model[_]]
+    val subModels =
+      if (TuningUtils.persistSubModels(meta)) {
+        TuningUtils.loadSubModels(path, 1, loaded.paramMaps.length).head
+      } else {
+        null
+      }
     val model = new TrainValidationSplitModel(
-      uid,
-      best.asInstanceOf[Model[_]],
-      TuningUtils.splitDoubles(
-        lines.collectFirst { case Seq("validationMetrics", v) => v }.getOrElse("")
-      ),
-      null
+      meta.uid,
+      bestModel,
+      TuningUtils.parseDoubles(meta.raw.get("validationMetrics")),
+      subModels
     )
-    val est = TuningUtils.loadStage(
-      lines.collectFirst { case Seq("estimatorClass", c) => c }.get,
-      s"$path/estimator"
-    )
-    val eva = TuningUtils.loadStage(
-      lines.collectFirst { case Seq("evaluatorClass", c) => c }.get,
-      s"$path/evaluator"
-    )
-    model.set(model.estimator, est.asInstanceOf[Estimator[_]])
-    model.set(model.evaluator, eva.asInstanceOf[Evaluator])
+    DefaultParams.getAndSetParams(model, meta, Set("estimatorParamMaps"))
+    model.set(model.estimator, loaded.estimator)
+    model.set(model.evaluator, loaded.evaluator)
+    model.set(model.estimatorParamMaps, loaded.paramMaps)
     model
   }
 }
 
 private[tuning] class TrainValidationSplitWriter(instance: TrainValidationSplit)
     extends MLWriter(instance) {
-  override protected def saveImpl(path: String): Unit = {
-    val est = instance.getEstimator.asInstanceOf[org.apache.spark.ml.param.Params]
-    val eva = instance.getEvaluator.asInstanceOf[org.apache.spark.ml.param.Params]
-    TuningUtils.saveStage(est, s"$path/estimator", isOverwrite)
-    TuningUtils.saveStage(eva, s"$path/evaluator", isOverwrite)
-    org.apache.spark.ml.PipelineIO.writeLines(
+  override protected def saveImpl(path: String): Unit =
+    TuningUtils.saveValidator(
       path,
-      Seq(
-        s"class\t${instance.getClass.getName}",
-        s"uid\t${instance.uid}",
-        s"estimatorClass\t${est.getClass.getName}",
-        s"evaluatorClass\t${eva.getClass.getName}",
-        s"trainRatio\t${instance.getTrainRatio}"
-      ) ++ TuningUtils.encodeParamMaps(instance.getEstimatorParamMaps.toSeq),
-      isOverwrite
+      instance.uid,
+      instance.getClass.getName,
+      instance.extractParamMap(),
+      instance.getEstimator.asInstanceOf[Params],
+      instance.getEvaluator.asInstanceOf[Params],
+      instance.getEstimatorParamMaps.toSeq,
+      isOverwrite,
+      Nil
     )
-  }
 }
 
 private[tuning] class TrainValidationSplitModelWriter(instance: TrainValidationSplitModel)
     extends MLWriter(instance) {
   override protected def saveImpl(path: String): Unit = {
-    TuningUtils.saveStage(instance.bestModel, s"$path/bestModel", isOverwrite)
-    val est = instance.getEstimator.asInstanceOf[org.apache.spark.ml.param.Params]
-    val eva = instance.getEvaluator.asInstanceOf[org.apache.spark.ml.param.Params]
-    TuningUtils.saveStage(est, s"$path/estimator", isOverwrite)
-    TuningUtils.saveStage(eva, s"$path/evaluator", isOverwrite)
-    org.apache.spark.ml.PipelineIO.writeLines(
+    val persist = optionValue("persistSubModels").map(_.toBoolean).getOrElse(false)
+    if (persist && instance.subModels == null) {
+      throw new IllegalArgumentException(
+        "Persisting sub-models requires collectSubModels to be set when the tuning was run."
+      )
+    }
+    TuningUtils.saveValidator(
       path,
+      instance.uid,
+      instance.getClass.getName,
+      TuningUtils.modelParams(instance),
+      instance.getEstimator.asInstanceOf[Params],
+      instance.getEvaluator.asInstanceOf[Params],
+      instance.getEstimatorParamMaps.toSeq,
+      isOverwrite,
       Seq(
-        s"class\t${instance.getClass.getName}",
-        s"uid\t${instance.uid}",
-        s"bestModelClass\t${instance.bestModel.getClass.getName}",
-        s"estimatorClass\t${est.getClass.getName}",
-        s"evaluatorClass\t${eva.getClass.getName}",
-        s"validationMetrics\t${TuningUtils.joinDoubles(instance.validationMetrics.toSeq)}"
-      ),
-      isOverwrite
+        "validationMetrics" -> TuningUtils.doubles(instance.validationMetrics.toSeq),
+        "persistSubModels" -> Json.Bool(persist)
+      )
     )
+    TuningUtils.saveStage(instance.bestModel.asInstanceOf[Params], s"$path/bestModel", isOverwrite)
+    if (persist) {
+      instance.subModels.zipWithIndex.foreach { case (m, j) =>
+        TuningUtils.saveStage(m.asInstanceOf[Params], s"$path/subModels/fold0/$j", isOverwrite)
+      }
+    }
   }
 }

@@ -54,7 +54,7 @@ private[ml] object RemoteIO {
     }
     val session = instance match {
       case m: RemoteModelLike => m.ref.session
-      case _ => SparkSession.active
+      case _ => MlClient.currentSession()
     }
     MlClient.write(session, write)
   }
@@ -89,7 +89,7 @@ private[ml] object RemoteIO {
       path: String,
       construct: String => T
   ): T = {
-    val session = SparkSession.active
+    val session = MlClient.currentSession()
     val info = MlClient.read(session, name, operatorType, path)
     val instance = construct(info.getUid)
     MlSerializer.applyParams(instance, info.getParams)
@@ -98,7 +98,7 @@ private[ml] object RemoteIO {
 
   /** Loads a model of class `name` from `path` and caches it on the server. */
   def loadModel[T <: Params](name: String, path: String, construct: (String, ModelRef) => T): T = {
-    val session = SparkSession.active
+    val session = MlClient.currentSession()
     val info = MlClient.read(session, name, proto.MlOperator.OperatorType.OPERATOR_TYPE_MODEL, path)
     val ref = new ModelRef(info.getObjRef.id, session, None)
     val instance = construct(info.getUid, ref)
