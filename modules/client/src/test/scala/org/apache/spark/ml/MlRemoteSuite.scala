@@ -26,6 +26,17 @@ import org.apache.spark.sql.{RemoteSparkSuite, SparkSession}
  */
 abstract class MlRemoteSuite extends RemoteSparkSuite {
 
+  /**
+   * Spark 4.1 refuses to fit FPGrowth, and LDA with the em optimizer, while its ML cache memory
+   * control (`spark.connect.session.connectML.mlCache.memoryControl.enabled`, on by default) is
+   * enabled. Spark 4.0 predates the control, and Spark 4.2 lifted the restriction.
+   */
+  protected def mlCacheMemoryControlRejectsFit: Boolean =
+    serverAtLeast(4, 1) && !serverAtLeast(4, 2)
+
+  protected val mlCacheMemoryControlReason: String =
+    "Spark 4.1 refuses this fit while its ML cache memory control is on (the default)"
+
   override protected def withSpark(body: SparkSession => Unit): Unit =
     if (serverAtLeast(4, 0)) {
       // Make this suite's session the active one on this thread. Loads and saves use the active

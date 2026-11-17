@@ -23,6 +23,7 @@ class FPGrowthIntegrationSuite extends MlRemoteSuite {
 
   test("FPGrowth mines frequent itemsets and association rules") {
     withSpark { spark =>
+      assume(!mlCacheMemoryControlRejectsFit, mlCacheMemoryControlReason)
       val df = MlTestData.transactions(spark)
       val model = new FPGrowth().setMinSupport(0.2).setMinConfidence(0.5).fit(df)
       assert(model.freqItemsets.count() > 0L)

@@ -48,6 +48,7 @@ class LDAPowerIterationIntegrationSuite extends MlRemoteSuite {
 
   test("LDA with the em optimizer fits a distributed model that converts to local") {
     withSpark { spark =>
+      assume(!mlCacheMemoryControlRejectsFit, mlCacheMemoryControlReason)
       val counts = spark
         .range(12)
         .select(

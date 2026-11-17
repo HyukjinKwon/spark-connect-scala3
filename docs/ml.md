@@ -129,6 +129,10 @@ Integration tests cover each family against a live 4.3.0 server.
 
 ## Limitations
 
+- Spark 4.1 servers refuse to fit `FPGrowth`, and `LDA` with `setOptimizer("em")`, while
+  their ML cache memory control is on, which is the default. Set
+  `spark.connect.session.connectML.mlCache.memoryControl.enabled=false` on the server to
+  use them there. Spark 4.0 and 4.2 or newer allow both.
 - Models are released explicitly with `release()`. The client does not release them
   when they are garbage collected.
 - `OneVsRest` is not on the server allowlist. The client runs one binary fit per
