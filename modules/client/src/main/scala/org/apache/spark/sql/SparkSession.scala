@@ -66,6 +66,9 @@ class SparkSession private[sql] (private[sql] val client: SparkConnectClient)
   // Whether close() releases the server-side session.
   private[sql] var releaseSessionOnClose: Boolean = true
 
+  // Set once an ML command has run on this session, so close() knows to evict its ML cache.
+  @volatile private[sql] var mlCacheUsed: Boolean = false
+
   /** The client session id (a UUID). */
   def sessionId: String = client.sessionId
 
@@ -471,6 +474,16 @@ class SparkSession private[sql] (private[sql] val client: SparkConnectClient)
 
   override def close(): Unit = {
     try {
+      // Evict the ML models this session cached on the server, as PySpark does on exit.
+      // CleanCache exists from server 4.1; older servers evict when the session is released. The
+      // version is read from what earlier ML commands learned, so closing never makes a round trip.
+      val mlSupportsCleanCache = connect.ml.MlClient.knownVersion(this).exists { case (ma, mi) =>
+        ma > 4 || (ma == 4 && mi >= 1)
+      }
+      if (mlCacheUsed && mlSupportsCleanCache && !client.channel.isShutdown) {
+        try connect.ml.MlClient.cleanCache(this)
+        catch { case NonFatal(_) => /* best effort: the server also evicts on session release */ }
+      }
       streamingQueryListenerBus.shutdown()
       if (releaseSessionOnClose && !client.channel.isShutdown) {
         // Best effort: the server also expires abandoned sessions on its own.

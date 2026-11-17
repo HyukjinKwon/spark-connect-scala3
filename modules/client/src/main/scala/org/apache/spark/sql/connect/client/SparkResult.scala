@@ -92,6 +92,7 @@ private[sql] class SparkResult(
             values(c) = SparkResult.getValue(vectors.get(c), r)
             c += 1
           }
+          SparkResult.decodeMlValues(values, _schema)
           rows += new GenericRowWithSchema(values, _schema)
           r += 1
         }
@@ -118,6 +119,28 @@ private[sql] class SparkResult(
 }
 
 private[sql] object SparkResult {
+
+  /**
+   * Replaces the struct values of ML vector and matrix columns with `Vector` and `Matrix` values,
+   * so `row.getAs[Vector]("features")` works as it does in Spark. The schema marks those columns.
+   */
+  private[client] def decodeMlValues(values: Array[Any], schema: StructType): Unit =
+    if (schema != null) {
+      var i = 0
+      while (i < values.length && i < schema.fields.length) {
+        val field = schema.fields(i)
+        if (values(i) != null && field.metadata.contains(DataTypeProtoConverter.MlUdtKey)) {
+          values(i) = field.metadata.getString(DataTypeProtoConverter.MlUdtKey) match {
+            case "org.apache.spark.ml.linalg.VectorUDT" =>
+              org.apache.spark.ml.linalg.VectorUDT.deserialize(values(i).asInstanceOf[Row])
+            case "org.apache.spark.ml.linalg.MatrixUDT" =>
+              org.apache.spark.ml.linalg.MatrixUDT.deserialize(values(i).asInstanceOf[Row])
+            case _ => values(i)
+          }
+        }
+        i += 1
+      }
+    }
 
   private val MICROS_PER_SECOND = 1000000L
 

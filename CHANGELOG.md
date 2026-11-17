@@ -3,6 +3,37 @@
 All notable changes to this project are documented in this file. The format is
 based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- Spark ML over Spark Connect under `org.apache.spark.ml.*`, mirroring Apache
+  Spark's Scala ML API (requires a Spark Connect server 4.0 or newer). Covers every
+  estimator (42), transformer and model (61), and evaluator (6) that the server
+  allowlists, checked against the Spark 4.3.0 `META-INF/services` files:
+  - the params framework (`Param`, `ParamMap`, `ParamPair`, `Params`, shared
+    params, `ParamGridBuilder`) with Spark's defaults and validators;
+  - base classes `Estimator`, `Transformer`, `Model`, `Evaluator`, `Pipeline`,
+    `PipelineModel`, and `PipelineStage`;
+  - classification, regression, clustering, recommendation, frequent-pattern,
+    feature and LSH operators with their models, summaries, and `evaluate`;
+    `OneVsRest`; `LDA`; `PowerIterationClustering`; `PrefixSpan`;
+  - six evaluators; `CrossValidator`, `TrainValidationSplit` (with `parallelism`),
+    and their models;
+  - persistence (`save`, `write.overwrite()`, `load`) for operators, models,
+    pipelines, and tuning models, in Spark's standard format, verified against
+    PySpark 4.3.0 in both directions;
+  - `org.apache.spark.ml.linalg`: `Vector`, `DenseVector`, `SparseVector`,
+    `Vectors`, `Matrix`, `DenseMatrix`, `SparseMatrix`, and `Matrices`. Vector and
+    matrix columns decode to these types in collected rows, and render in `show()`;
+  - `org.apache.spark.ml.stat` (`Correlation`, `ChiSquareTest`,
+    `KolmogorovSmirnovTest`, `Summarizer`) and `org.apache.spark.ml.functions`
+    (`vector_to_array`, `array_to_vector`);
+  - `StopWordsRemover` defaults to Spark's English stop words from the server;
+  - model cache release through `Model.release()`, eviction on session close, and
+    `estimatedSize` (server 4.1 or newer).
+- A machine learning guide (`docs/ml.md`) and the `MachineLearning` example.
+
 ## [0.4.0] - 2026-11-04
 
 Brings the client to parity with the Scala Spark Connect client of Apache Spark

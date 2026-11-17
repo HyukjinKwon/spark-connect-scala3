@@ -79,6 +79,13 @@ object DataTypeProtoConverter {
     // schemas containing them (e.g. ML vectors) can still be inspected and decoded.
     case k: p.DataType.Kind.Udt if k.value.sqlType.isDefined =>
       toCatalystType(k.value.getSqlType)
+    // ML vectors and matrices: the server may omit the SQL type, so use the ML codec's struct.
+    case k: p.DataType.Kind.Udt
+        if k.value.jvmClass.contains("org.apache.spark.ml.linalg.VectorUDT") =>
+      org.apache.spark.ml.linalg.VectorUDT.sqlType
+    case k: p.DataType.Kind.Udt
+        if k.value.jvmClass.contains("org.apache.spark.ml.linalg.MatrixUDT") =>
+      org.apache.spark.ml.linalg.MatrixUDT.sqlType
     case k: p.DataType.Kind.Unparsed =>
       throw new IllegalArgumentException(
         s"Cannot convert unparsed data type: ${k.value.dataTypeString}"
@@ -92,8 +99,20 @@ object DataTypeProtoConverter {
       name = f.name,
       dataType = toCatalystType(f.getDataType),
       nullable = f.nullable,
-      metadata = Metadata.empty
+      metadata = mlUdtMetadata(f.getDataType)
     )
+
+  /** Metadata key that marks a field as an ML vector or matrix UDT, read back as an ML value. */
+  private[sql] val MlUdtKey: String = "__ml_udt"
+
+  // A vector or matrix field records its UDT class, so rows decode it to `Vector` / `Matrix`.
+  private def mlUdtMetadata(t: p.DataType): Metadata = t.kind match {
+    case k: p.DataType.Kind.Udt
+        if k.value.jvmClass.contains("org.apache.spark.ml.linalg.VectorUDT") ||
+          k.value.jvmClass.contains("org.apache.spark.ml.linalg.MatrixUDT") =>
+      new MetadataBuilder().putString(MlUdtKey, k.value.jvmClass.get).build()
+    case _ => Metadata.empty
+  }
 
   /** Converts a client-side [[DataType]] into the protobuf representation. */
   def toConnectProtoType(t: DataType): p.DataType = {

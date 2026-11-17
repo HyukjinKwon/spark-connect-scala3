@@ -1,0 +1,207 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.spark.ml.regression
+
+import org.apache.spark.connect.proto
+import org.apache.spark.ml.{Estimator, Model, Transformer}
+import org.apache.spark.ml.connect.{ModelRef, RemoteIO, RemoteModelLike, RemoteOps}
+import org.apache.spark.ml.linalg.{Matrix, Vector}
+import org.apache.spark.ml.param._
+import org.apache.spark.ml.param.shared._
+import org.apache.spark.ml.util.{Identifiable, MLReadable, MLWritable, MLWriter, Summary}
+import org.apache.spark.sql.{DataFrame, Dataset}
+
+/** Params of FMRegressor. */
+trait FMRegressorParams
+    extends HasFeaturesCol
+    with HasLabelCol
+    with HasPredictionCol
+    with HasMaxIter
+    with HasTol
+    with HasFitIntercept
+    with HasRegParam
+    with HasStepSize
+    with HasSeed {
+
+  final val factorSize: IntParam = new IntParam(
+    this,
+    "factorSize",
+    "Dimensionality of the factor vectors, which are used in the pairwise interactions (> 0).",
+    ParamValidators.gt(0)
+  )
+
+  final val fitLinear: BooleanParam =
+    new BooleanParam(this, "fitLinear", "whether to fit linear term (aka 1-way term)")
+
+  final val miniBatchFraction: DoubleParam = new DoubleParam(
+    this,
+    "miniBatchFraction",
+    "fraction of the input data set that should be used for one iteration of gradient descent, in range (0, 1].",
+    ParamValidators.inRange(0.0, 1.0, lowerInclusive = false)
+  )
+
+  final val initStd: DoubleParam = new DoubleParam(
+    this,
+    "initStd",
+    "standard deviation of initial coefficients",
+    ParamValidators.gt(0.0)
+  )
+
+  final val solver: Param[String] = new Param[String](
+    this,
+    "solver",
+    "The solver algorithm for optimization.",
+    ParamValidators.inArray(Array("adamW", "gd"))
+  )
+
+  setDefault(
+    factorSize -> 8,
+    fitLinear -> true,
+    miniBatchFraction -> 1.0,
+    initStd -> 0.01,
+    solver -> "adamW",
+    maxIter -> 100,
+    tol -> 1e-6,
+    regParam -> 0.0,
+    stepSize -> 1.0
+  )
+
+  def setFactorSize(value: Int): this.type = set(factorSize, value)
+  def getFactorSize: Int = $(factorSize)
+
+  def setFitLinear(value: Boolean): this.type = set(fitLinear, value)
+  def getFitLinear: Boolean = $(fitLinear)
+
+  def setMiniBatchFraction(value: Double): this.type = set(miniBatchFraction, value)
+  def getMiniBatchFraction: Double = $(miniBatchFraction)
+
+  def setInitStd(value: Double): this.type = set(initStd, value)
+  def getInitStd: Double = $(initStd)
+
+  def setSolver(value: String): this.type = set(solver, value)
+  def getSolver: String = $(solver)
+
+  def setFeaturesCol(value: String): this.type = set(featuresCol, value)
+
+  def setLabelCol(value: String): this.type = set(labelCol, value)
+
+  def setPredictionCol(value: String): this.type = set(predictionCol, value)
+
+  def setMaxIter(value: Int): this.type = set(maxIter, value)
+
+  def setTol(value: Double): this.type = set(tol, value)
+
+  def setFitIntercept(value: Boolean): this.type = set(fitIntercept, value)
+
+  def setRegParam(value: Double): this.type = set(regParam, value)
+
+  def setStepSize(value: Double): this.type = set(stepSize, value)
+
+  def setSeed(value: Long): this.type = set(seed, value)
+
+}
+
+/**
+ * Factorization Machines learning algorithm for regression. Mirrors
+ * `org.apache.spark.ml.regression.FMRegressor`.
+ */
+class FMRegressor(override val uid: String)
+    extends Estimator[FMRegressionModel]
+    with FMRegressorParams
+    with MLWritable {
+
+  def this() = this(Identifiable.randomUID("fmr"))
+
+  override def fit(dataset: Dataset[_]): FMRegressionModel =
+    RemoteOps.fit(
+      this,
+      FMRegressor.OperatorName,
+      dataset,
+      (id, ref) => new FMRegressionModel(id, ref)
+    )
+
+  override def copy(extra: ParamMap): FMRegressor = copyValues(new FMRegressor(uid), extra)
+
+  override def write: MLWriter = new MLWriter(this)
+}
+
+object FMRegressor extends MLReadable[FMRegressor] {
+
+  private[ml] val OperatorName: String = "org.apache.spark.ml.regression.FMRegressor"
+
+  override def load(path: String): FMRegressor =
+    RemoteIO.loadOperator(
+      OperatorName,
+      proto.MlOperator.OperatorType.OPERATOR_TYPE_ESTIMATOR,
+      path,
+      new FMRegressor(_)
+    )
+}
+
+/**
+ * The model fit by [[FMRegressor]], held on the server. Mirrors
+ * `org.apache.spark.ml.regression.FMRegressionModel`.
+ */
+class FMRegressionModel private[ml] (override val uid: String, private[ml] val ref: ModelRef)
+    extends Model[FMRegressionModel]
+    with FMRegressorParams
+    with RemoteModelLike
+    with MLWritable {
+
+  private def attr[T](name: String): T = RemoteOps.fetch(ref, Seq(name)).asInstanceOf[T]
+
+  private def attrWith[T](name: String, args: Any*): T =
+    RemoteOps.fetch(ref, Seq(name), args).asInstanceOf[T]
+
+  private def frame(name: String): DataFrame = RemoteOps.fetchRelation(ref, Seq(name))
+
+  private def frameWith(name: String, args: Any*): DataFrame =
+    RemoteOps.fetchRelation(ref, Seq(name), args)
+
+  /** Model attribute `intercept`, read from the server. */
+  def intercept: Double = attr[Double]("intercept")
+
+  /** Model attribute `linear`, read from the server. */
+  def linear: Vector = attr[Vector]("linear")
+
+  /** Model attribute `factors`, read from the server. */
+  def factors: Matrix = attr[Matrix]("factors")
+
+  /** Model attribute `numFeatures`, read from the server. */
+  def numFeatures: Int = attr[Int]("numFeatures")
+
+  override def copy(extra: ParamMap): FMRegressionModel =
+    copyValues(new FMRegressionModel(uid, ref.retain()), extra)
+
+  override def transform(dataset: Dataset[_]): DataFrame =
+    RemoteOps.transformWithModel(this, ref, dataset)
+
+  override def release(): Unit = ref.release()
+
+  /** The estimated in-memory size of this model on the server, in bytes (server 4.1+). */
+  def estimatedSize: Long = RemoteOps.modelSize(ref)
+
+  override def write: MLWriter = new MLWriter(this)
+}
+
+object FMRegressionModel extends MLReadable[FMRegressionModel] {
+
+  private[ml] val OperatorName: String = "org.apache.spark.ml.regression.FMRegressionModel"
+
+  override def load(path: String): FMRegressionModel =
+    RemoteIO.loadModel(OperatorName, path, (id, ref) => new FMRegressionModel(id, ref))
+}
