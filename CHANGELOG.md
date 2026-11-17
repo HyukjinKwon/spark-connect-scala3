@@ -3,6 +3,42 @@
 All notable changes to this project are documented in this file. The format is
 based on Keep a Changelog, and this project adheres to Semantic Versioning.
 
+## [Unreleased]
+
+### Added
+
+- Spark ML over Spark Connect under `org.apache.spark.ml.*`, mirroring Apache
+  Spark's Scala ML API (requires a Spark Connect server 4.0 or newer):
+  - the params framework (`Param`, `ParamMap`, `ParamPair`, `Params`, shared
+    params, `ParamGridBuilder`) with Spark's defaults and validators;
+  - base classes `Estimator`, `Transformer`, `Model`, `Evaluator`, `Pipeline`,
+    `PipelineModel`, and `PipelineStage`, with `fit`, `transform`, `evaluate`,
+    `copy`, and `explainParams`;
+  - estimators `LogisticRegression` (with binary and multiclass summaries),
+    `LinearSVC`, `NaiveBayes`, `LinearRegression`, `KMeans`, `BisectingKMeans`,
+    `GaussianMixture`, `ALS`, `FPGrowth`, `StandardScaler`, `MinMaxScaler`,
+    `MaxAbsScaler`, `StringIndexer`, `OneHotEncoder`, `Imputer`, `PCA`, `IDF`, and
+    `CountVectorizer`, with their models and model attributes;
+  - 18 feature transformers, among them `VectorAssembler`, `Tokenizer`,
+    `RegexTokenizer`, `Binarizer`, `Bucketizer`, `NGram`, `HashingTF`, `StopWordsRemover`,
+    `PolynomialExpansion`, and `SQLTransformer`;
+  - six evaluators: `RegressionEvaluator`, `BinaryClassificationEvaluator`,
+    `MulticlassClassificationEvaluator`, `ClusteringEvaluator`, `RankingEvaluator`,
+    and `MultilabelClassificationEvaluator`;
+  - `CrossValidator`, `TrainValidationSplit`, and their models, with the folds run
+    from the client as PySpark does over Connect;
+  - persistence (`save`, `write.overwrite()`, `load`) for operators, models,
+    pipelines, and tuning models;
+  - `org.apache.spark.ml.linalg`: `Vector`, `DenseVector`, `SparseVector`,
+    `Vectors`, `Matrix`, `DenseMatrix`, `SparseMatrix`, and `Matrices`, with the
+    `VectorUDT` and `MatrixUDT` codecs for result rows;
+  - `org.apache.spark.ml.stat` (`Correlation`, `ChiSquareTest`,
+    `KolmogorovSmirnovTest`, `Summarizer`) and `org.apache.spark.ml.functions`
+    (`vector_to_array`, `array_to_vector`);
+  - server-side model cache release through `Model.release()`, and eviction on
+    session close (on servers 4.1 or newer).
+- A machine learning guide (`docs/ml.md`) and the `MachineLearning` example.
+
 ## [0.4.0] - 2026-11-04
 
 Brings the client to parity with the Scala Spark Connect client of Apache Spark

@@ -12,6 +12,7 @@ Run any example with sbt:
 sbt "examples/runMain examples.QuickStart"
 sbt "examples/runMain examples.Aggregations"
 sbt "examples/runMain examples.JoinExample sc://localhost:15002"
+sbt "examples/runMain examples.MachineLearning"
 ```
 
 | Program | What it shows |
@@ -26,6 +27,7 @@ sbt "examples/runMain examples.JoinExample sc://localhost:15002"
 | `StructuredStreaming` | Read the built-in `rate` source, transform it, write to the in-memory sink, and query the sink. |
 | `DeclarativePipeline` | Build and run a Spark Declarative Pipelines dataflow graph (requires an Apache Spark 4.1+ server). |
 | `RelationExtension` | Build a `Relation.extension` from a packed protobuf message and turn it into a DataFrame -- the entry point for Spark Connect plugins (e.g. GraphFrames). |
+| `MachineLearning` | A pipeline of vector assembly and logistic regression, tuned with cross validation (requires a Spark 4.0+ server). |
 | `Smoke` | A minimal end-to-end check against a live Spark Connect server. |
 
 Run any of them by name, for example:

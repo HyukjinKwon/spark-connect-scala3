@@ -58,7 +58,7 @@ The following all require running a user-provided JVM closure on the server (the
 Also out of scope because they are not part of the Spark Connect protocol at all:
 
 - The **RDD API** (`Dataset.rdd`, `SparkContext`, accumulators, broadcast variables) and other in-process JVM state (`queryExecution`, `sessionState`).
-- The **MLlib-over-Connect** surface.
+- ML operators not yet implemented (see the [Machine learning](ml.md) guide).
 - **Artifact upload** (`addArtifact(s)`), which only matters for shipping UDF code.
 
 ## Project facts
